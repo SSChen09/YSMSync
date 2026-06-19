@@ -1,6 +1,8 @@
 # YSMSync
 
 > **Warning** 本项目使用 GitHub Actions 自动构建，作者也无法保证每个构建版本完全没有 bug。如遇问题请到 [Issues](https://github.com/SSChen09/YSMSync/issues) 反馈。
+>
+> 注意：修订号更新（如 `x.y.1`）可能不会触发自动构建，Release 页面的版本号可能与最新代码不一致。
 
 Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-steve-model) / [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) 的模型同步功能。
 

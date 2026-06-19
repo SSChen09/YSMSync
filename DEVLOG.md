@@ -242,6 +242,18 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 | Packet 04 | C→S | key1 加密 | 请求缺失模型 |
 | Packet 05 | S→C | key1 加密 | 分块发送模型缓存文件 |
 
+### v2.0.4 — 修复模型同步只能同步一次
+
+**问题：** 客户端在所有模型缓存命中时直接调用 `onSyncComplete()`，不发送 Packet 04。服务端依赖 `handleRequestModel`（Packet 04）来标记 `handshakeCompleted = true`，导致该标志永远为 `false`，后续 `broadcastYSMPayloadExcept` 过滤掉所有广播。
+
+**修复：** 在 `sendPacket03` 发送模型目录后立即完成握手（设置 `syncStep=3`、`handshakeCompleted=true`），并主动调用 `syncAllModelsToJoiningPlayer` 和 `broadcastModelToAllPlayers`。`handleRequestModel` 简化为仅处理缓存文件请求，不再负责握手完成和广播逻辑。
+
+### v2.0.5 — 修复上传多模型后只保留最后一个
+
+**问题：** `storeModelData` 使用硬编码 `"model"` 作为 Map key。上传流程通过 `storeRawModelData` 将模型 A 存为 `"model_a.ysm"`，但随后客户端发送的 C2S ModelSync 调用 `storeModelData` 会以 `"model"` key 覆盖写入。上传模型 B 后同理，最终 `"model"` key 指向最后一个模型，之前的命名模型数据被孤立。
+
+**修复：** `storeModelData` 新增前置检查：如果玩家 `playerModels` 中已有数据（来自上传流程），直接跳过，避免 C2S ModelSync 覆盖已上传的命名模型。
+
 ---
 
 ## 项目结构

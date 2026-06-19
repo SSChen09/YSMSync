@@ -63,10 +63,17 @@ public class ModelFileManager {
     /**
      * 存储玩家的模型数据（C2SModelSyncPayload 格式）。
      * 自动转换为 S2C 格式后存储，并创建加密缓存文件。
+     * 如果玩家已有通过上传流程存储的命名模型，则跳过，避免覆盖。
      */
     public void storeModelData(UUID playerUuid, byte[] rawData) {
         byte[] s2cData = convertC2S_to_S2C(rawData);
         if (s2cData == null) return;
+
+        Map<String, byte[]> models = playerModels.get(playerUuid);
+        if (models != null && !models.isEmpty()) {
+            // 玩家已有模型数据（通过上传流程存储），跳过 ModelSync 的覆盖写入
+            return;
+        }
 
         String name = "model";
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(name, s2cData);
