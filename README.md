@@ -89,70 +89,9 @@ auto-update: false
 5. 玩家切换模型时，广播切换信息给其他玩家
 6. 模型文件存储在 `plugins/YSMSync/models/{玩家UUID}/{模型名}` 目录
 
-## 协议支持
+## 更多信息
 
-基于 [YSM 2.6.0 协议](https://github.com/OpenYSM/OpenYSM)，支持以下数据包类型：
-
-| ID | 方向  | 名称                        |
-| -- | --- | ------------------------- |
-| 1  | S→C | SetModelAndTexture        |
-| 2  | C→S | ModelSync                 |
-| 3  | S→C | ExecuteMolang             |
-| 4  | S→C | SetModelAndTexture (sync) |
-| 5  | C→S | RequestSwitchModel        |
-| 6  | S→C | SyncAuthModels            |
-| 7  | C→S | PlayAnimation             |
-| 8  | S→C | SyncStarModels            |
-| 9  | C→S | StopAnimation             |
-| 15 | C→S | CompleteFeedback          |
-| 17 | C→S | PlayAnimation             |
-| 18 | C→S | SyncAnimationExpression   |
-| 19 | S→C | SyncAnimationExpression   |
-| 21 | S→C | SyncPlayerState           |
-| 23 | C→S | SwingArm                  |
-| 51 | S→C | VersionCheck              |
-| 52 | C→S | VersionCheckResponse      |
-| 70 | C→S | UploadStart               |
-| 71 | S→C | UploadStartResponse       |
-| 72 | C→S | UploadChunk               |
-| 73 | C→S | UploadFinish              |
-| 74 | S→C | UploadResult              |
-
-## 项目结构
-
-```
-YSMSync/
-├── src/main/java/com/ysmsync/
-│   ├── YSMPlugin.java              # 主插件入口
-│   ├── crypto/
-│   │   ├── ChaCha20Base.java       # ChaCha20 流密码基类
-│   │   ├── CityHash.java           # CityHash64 哈希算法
-│   │   ├── MT19937.java            # Mersenne Twister 伪随机数
-│   │   ├── ServerKeyManager.java   # 服务端密钥管理
-│   │   ├── XChaCha20.java          # XChaCha20 流密码
-│   │   └── YsmCrypt.java           # YSM 加密/解密工具
-│   ├── model/
-│   │   ├── ModelFileManager.java   # 模型文件存储管理
-│   │   └── ModelUploadManager.java # 模型上传管理
-│   ├── net/
-│   │   ├── YSMByteBuf.java         # YSM 小端序 ByteBuf 包装器
-│   │   └── YSMChannelHandler.java  # Netty Pipeline 拦截器
-│   ├── packet/
-│   │   └── YSMPacketHandler.java   # 数据包处理分发
-│   ├── state/
-│   │   ├── PlayerYSMState.java     # 单玩家 YSM 状态
-│   │   └── YSMStateManager.java    # 全局状态管理
-│   ├── storage/
-│   │   └── YSMStorage.java         # SQLite 存储层
-│   ├── update/
-│   │   └── UpdateChecker.java      # 版本检查与自动更新
-│   └── util/
-│       └── VarIntUtil.java         # VarInt/VarLong 编解码
-├── src/main/resources/
-│   ├── plugin.yml                  # 插件元数据
-│   └── config.yml                  # 默认配置
-└── build.gradle.kts                # Gradle 构建脚本
-```
+协议支持、项目结构、技术要点、版本演进与问题排查等详细内容，请查看 [DEVLOG.md](DEVLOG.md)。
 
 ## 构建
 
@@ -177,7 +116,7 @@ cd YSMSync
 
 ## 许可证
 
-MIT License
+本项目采用 [MIT License](LICENSE) 许可证。
 
 ***
 

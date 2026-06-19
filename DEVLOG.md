@@ -241,6 +241,33 @@ YSMSync/
 
 自定义频道：`yes_steve_model:2_6_0`，共 21 种网络消息类型，使用 VarInt/VarLong 编码。
 
+基于 [YSM 2.6.0 协议](https://github.com/OpenYSM/OpenYSM)，支持以下数据包类型：
+
+| ID | 方向  | 名称                        |
+| -- | --- | ------------------------- |
+| 1  | S→C | SetModelAndTexture        |
+| 2  | C→S | ModelSync                 |
+| 3  | S→C | ExecuteMolang             |
+| 4  | S→C | SetModelAndTexture (sync) |
+| 5  | C→S | RequestSwitchModel        |
+| 6  | S→C | SyncAuthModels            |
+| 7  | C→S | PlayAnimation             |
+| 8  | S→C | SyncStarModels            |
+| 9  | C→S | StopAnimation             |
+| 15 | C→S | CompleteFeedback          |
+| 17 | C→S | PlayAnimation             |
+| 18 | C→S | SyncAnimationExpression   |
+| 19 | S→C | SyncAnimationExpression   |
+| 21 | S→C | SyncPlayerState           |
+| 23 | C→S | SwingArm                  |
+| 51 | S→C | VersionCheck              |
+| 52 | C→S | VersionCheckResponse      |
+| 70 | C→S | UploadStart               |
+| 71 | S→C | UploadStartResponse       |
+| 72 | C→S | UploadChunk               |
+| 73 | C→S | UploadFinish              |
+| 74 | S→C | UploadResult              |
+
 ### Netty Pipeline 拦截
 
 Paper 的 `PacketDecoder` 基于 Mojang 映射，只认识原版数据包 ID。YSM 协议的自定义 packet ID 会被拒绝。
