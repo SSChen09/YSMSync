@@ -26,3 +26,8 @@ debug: false
 
 # Check for updates on startup
 check-update: true
+
+# Auto-download and apply updates (requires server restart)
+# When true, the plugin will automatically download the latest JAR when an update is detected.
+# After download, restart the server to apply the update.
+auto-update: false

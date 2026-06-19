@@ -1,8 +1,22 @@
 # YSMSync
 
+> **Warning** 本项目使用 GitHub Actions 自动构建，作者也无法保证每个构建版本完全没有 bug。如遇问题请到 [Issues](https://github.com/SSChen09/YSMSync/issues) 反馈。
+
 Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/YesSteveModel) / [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) 的模型同步功能。
 
 玩家在客户端安装 YSM 模组后，服务器自动同步所有玩家的模型选择，使每个人都能看到彼此的自定义模型。
+
+## 最近更新
+
+### v1.5.0
+- **自动更新** — 新增 `auto-update` 配置项，开启后启动时自动下载最新版本；`/ysmsync update` 命令现在会自动下载而非仅提示
+
+### v1.4.0
+- **启动时检查更新** — 插件启动时异步检查 GitHub 是否有新版本，有则输出警告日志
+
+### v1.3.1
+- **修复 DecoderException** — 修复 Netty 拦截器未正确恢复 ByteBuf reader index 导致原版数据包解码失败的问题
+- **修复 Paper 26.1.2 兼容** — 适配 `ServerPlayer.connection` 字段类型变化，修正 Netty Channel 反射链
 
 ## 功能
 
@@ -53,6 +67,12 @@ upload:
 
 # 调试日志
 debug: false
+
+# 启动时检查更新
+check-update: true
+
+# 自动下载更新（需重启服务器生效）
+auto-update: false
 ```
 
 ## 工作原理
@@ -110,6 +130,8 @@ YSMSync/
 │   │   └── YSMStateManager.java    # 全局状态管理
 │   ├── storage/
 │   │   └── YSMStorage.java         # SQLite 存储层
+│   ├── update/
+│   │   └── UpdateChecker.java      # 版本检查与自动更新
 │   └── util/
 │       └── VarIntUtil.java         # VarInt/VarLong 编解码
 ├── src/main/resources/
