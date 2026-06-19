@@ -100,18 +100,15 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
                     return;
                 }
                 // 不是 YSM 频道，回退让 decoder 处理
-                buf.readerIndex(readerIndex);
-                super.channelRead(ctx, msg);
                 return;
             }
 
-            // 路径2: YSM 客户端直接发送自定义 packetId (1-74)
+            // 路径2: YSM 客户端直接发送自定义 packetId
             // Fabric/NeoForge 的 YSM mod 使用自定义网络通道，直接发送带有协议 ID 的原始包
-            if (packetId >= 1 && packetId <= 74) {
+            // 仅匹配已知的 YSM 协议 ID，避免误捕获原版数据包
+            if (packetId >= 1 && packetId <= 52 || (packetId >= 70 && packetId <= 74)) {
                 // 提取完整数据（包含 packetId）
                 byte[] data = new byte[buf.readableBytes() + varIntSize(packetId)];
-                // 重新从 readerIndex 开始写入
-                buf.readerIndex(readerIndex);
                 buf.getBytes(readerIndex, data);
 
                 buf.release(); // 释放原始 ByteBuf
@@ -121,6 +118,9 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
 
         } catch (Exception e) {
             // 解析失败，回退让 decoder 处理
+        } finally {
+            // 无论是否命中 YSM 路径，都恢复 reader index
+            // 确保 PacketDecoder 从正确位置开始读取
             buf.readerIndex(readerIndex);
         }
 
