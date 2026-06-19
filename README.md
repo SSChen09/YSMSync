@@ -8,6 +8,9 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.6.4
+- **修复握手循环** — 握手完成后不再发送 `VersionCheck`，避免客户端重复触发握手导致握手循环和上传崩溃
+
 ### v1.6.3
 - **修复 Packet 04 解密密钥** — `handleRequestModel` 错误使用 `clientNextKey` 解密，客户端实际用 `key1` 加密 Packet 04，导致解密产生垃圾数据并崩溃
 - **skipGarbageHeader 边界检查** — 垃圾头部长度超限时抛出明确异常而非 Netty IndexOutOfBoundsException
@@ -15,9 +18,6 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 ### v1.6.2
 - **修复 CustomPayload 频道名读取** — `handleCustomPayload` 错误读取两个字符串作为频道名，导致 payload 被截断，客户端卡在握手；改为读取单个 ResourceLocation 字符串
 - **修复解密数据包路由** — `handleIncoming` 重构：先读 VarInt packetId 再结合 syncStep 判断，用 `buf.remaining()` 提取纯加密数据，修复 `Integrity check failed` 导致客户端卡在"正在上传到服务器"
-
-### v1.6.1
-- **修复握手解密密钥错误** — `handleRequestModel` 错误使用 `key1` 解密 Packet 04，改为正确的 `clientNextKey`，修复握手永远无法完成的问题
 - **修复模型实时同步格式** — `relayRawPacket` 广播 C2S 格式数据导致其他客户端无法识别，改为广播已转换的 S2C 格式
 - **CustomPayload packet ID 动态获取** — 通过 NMS 反射自动发现 packet ID，兼容不同 MC 版本（1.20-1.20.1 使用 0x18，1.20.2+ 使用 0x17）
 - **安全与健壮性** — `ServerKeyManager` / `PlayerYSMState` 的 `byte[]` getter 防御性克隆；`VarInt` 溢出检查收紧至 35 位；`CityHash` 复用为单例；上传会话 5 分钟超时自动清理
@@ -92,30 +92,30 @@ auto-update: false
 
 基于 [YSM 2.6.0 协议](https://github.com/OpenYSM/OpenYSM)，支持以下数据包类型：
 
-| ID | 方向 | 名称 |
-|----|------|------|
-| 1 | S→C | SetModelAndTexture |
-| 2 | C→S | ModelSync |
-| 3 | S→C | ExecuteMolang |
-| 4 | S→C | SetModelAndTexture (sync) |
-| 5 | C→S | RequestSwitchModel |
-| 6 | S→C | SyncAuthModels |
-| 7 | C→S | PlayAnimation |
-| 8 | S→C | SyncStarModels |
-| 9 | C→S | StopAnimation |
-| 15 | C→S | SyncAnimationExpression |
-| 17 | C→S | Unknown17 |
-| 18 | C→S | SyncAnimationExpression |
-| 19 | S→C | SyncAnimationExpression |
-| 21 | S→C | Unknown21 |
-| 23 | C→S | Unknown23 |
-| 51 | S→C | VersionCheck |
-| 52 | C→S | VersionCheckResponse |
-| 70 | C→S | UploadStart |
-| 71 | S→C | UploadStartResponse |
-| 72 | C→S | UploadChunk |
-| 73 | C→S | UploadFinish |
-| 74 | S→C | UploadResult |
+| ID | 方向  | 名称                        |
+| -- | --- | ------------------------- |
+| 1  | S→C | SetModelAndTexture        |
+| 2  | C→S | ModelSync                 |
+| 3  | S→C | ExecuteMolang             |
+| 4  | S→C | SetModelAndTexture (sync) |
+| 5  | C→S | RequestSwitchModel        |
+| 6  | S→C | SyncAuthModels            |
+| 7  | C→S | PlayAnimation             |
+| 8  | S→C | SyncStarModels            |
+| 9  | C→S | StopAnimation             |
+| 15 | C→S | SyncAnimationExpression   |
+| 17 | C→S | Unknown17                 |
+| 18 | C→S | SyncAnimationExpression   |
+| 19 | S→C | SyncAnimationExpression   |
+| 21 | S→C | Unknown21                 |
+| 23 | C→S | Unknown23                 |
+| 51 | S→C | VersionCheck              |
+| 52 | C→S | VersionCheckResponse      |
+| 70 | C→S | UploadStart               |
+| Q  | S→C | UploadStartResponse       |
+| 72 | C→S | UploadChunk               |
+| 73 | C→S | UploadFinish              |
+| 74 | S→C | UploadResult              |
 
 ## 项目结构
 
@@ -178,8 +178,8 @@ cd YSMSync
 
 MIT License
 
----
+***
 
 ### **你YSM什么时候能开源**
 
-![YSM制作组未来计划通讯](https://static.wikitide.net/nmfwikiwiki/f/f9/YSM%E5%88%B6%E4%BD%9C%E7%BB%84%E6%9C%AA%E6%9D%A5%E8%AE%A1%E5%88%92%E9%80%9A%E8%AE%AF.png) 
+![YSM制作组未来计划通讯](https://static.wikitide.net/nmfwikiwiki/f/f9/YSM%E5%88%B6%E4%BD%9C%E7%BB%84%E6%9C%AA%E6%9D%A5%E8%AE%A1%E5%88%92%E9%80%9A%E8%AE%AF.png)

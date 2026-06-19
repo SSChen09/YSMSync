@@ -415,14 +415,8 @@ public class YSMStateManager {
             state.setSyncStep(3);
             state.setHandshakeCompleted(true);
 
-            // 发送版本响应、授权模型列表、收藏模型列表
-            String version = plugin.getConfig().getString("protocol-version", "2.6.0");
-            String brand = plugin.getConfig().getString("brand", "open_ysm:v1");
-            boolean allowUpload = plugin.getConfig().getBoolean("allow-upload", false);
-
-            sendYSMPayload(player, buildVersionCheckPacket(version, brand, allowUpload));
-            sendYSMPayload(player, buildSyncAuthModelsPacket());
-            sendYSMPayload(player, buildSyncStarModelsPacket());
+            // 注意：握手完成后不再发送 VersionCheck，否则客户端会重新触发握手导致循环
+            // Fox Model Loader 在收到 Packet 04 后直接进入 onSyncComplete，不等待额外包
 
             // 向该玩家同步所有其他玩家的模型
             syncAllModelsToJoiningPlayer(player);
