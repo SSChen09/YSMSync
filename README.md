@@ -2,7 +2,7 @@
 
 > **Warning** 本项目使用 GitHub Actions 自动构建，作者也无法保证每个构建版本完全没有 bug。如遇问题请到 [Issues](https://github.com/SSChen09/YSMSync/issues) 反馈。
 
-Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/YesSteveModel) / [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) 的模型同步功能。
+Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/OpenYSM) / [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) 的模型同步功能。
 
 玩家在客户端安装 YSM 模组后，服务器自动同步所有玩家的模型选择，使每个人都能看到彼此的自定义模型。
 
@@ -85,7 +85,7 @@ auto-update: false
 
 ## 协议支持
 
-基于 [YSM 2.6.0 协议](https://github.com/OpenYSM/YesSteveModel)，支持以下数据包类型：
+基于 [YSM 2.6.0 协议](https://github.com/OpenYSM/OpenYSM)，支持以下数据包类型：
 
 | ID | 方向 | 名称 |
 |----|------|------|
@@ -156,10 +156,17 @@ cd YSMSync
 
 本项目的实现思路和协议解析参考了以下项目：
 
-- [OpenYSM / YesSteveModel](https://github.com/OpenYSM/YesSteveModel) — YSM 协议定义与客户端模组实现
+- [OpenYSM](https://github.com/OpenYSM/OpenYSM) — YSM 协议定义与客户端模组实现
 - [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) — 基于 OpenYSM 的 Fabric/NeoForge 客户端模组，提供了协议细节参考
 - [Freesia II](https://github.com/FreesiaTeam/Freesia) — 跨服模型同步架构设计，其实体 ID 映射与分层同步思路对本项目的 Netty 拦截方案有重要启发
+- [Yes Steve Model](https://modrinth.com/mod/yes-steve-model) — 纯正的原版 YSM 模组
 
 ## 许可证
 
 MIT License
+
+---
+
+### **你YSM什么时候能开源**
+
+![YSM制作组未来计划通讯](https://static.wikitide.net/nmfwikiwiki/f/f9/YSM%E5%88%B6%E4%BD%9C%E7%BB%84%E6%9C%AA%E6%9D%A5%E8%AE%A1%E5%88%92%E9%80%9A%E8%AE%AF.png)
