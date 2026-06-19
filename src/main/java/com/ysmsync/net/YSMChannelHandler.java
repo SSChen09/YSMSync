@@ -31,7 +31,8 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
     private static Method getHandleMethod;
     private static Method getConnectionMethod;
     private static Field getConnectionField;
-    private static Field channelField;
+    private static Field innerConnectionField; // ServerCommonPacketListenerImpl → Connection
+    private static Field channelField;         // Connection → Channel
     private static boolean reflectionsInitialized = false;
 
     private static final Map<String, Channel> channelCache = new ConcurrentHashMap<>();
@@ -213,14 +214,18 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
         initReflections();
         Object serverPlayer = getHandleMethod.invoke(player);
 
-        // Paper 26.1.2+: connection is a field; older: method
-        Object connection;
+        // ServerPlayer → ServerCommonPacketListenerImpl
+        Object packetListener;
         if (getConnectionMethod != null) {
-            connection = getConnectionMethod.invoke(serverPlayer);
+            packetListener = getConnectionMethod.invoke(serverPlayer);
         } else {
-            connection = getConnectionField.get(serverPlayer);
+            packetListener = getConnectionField.get(serverPlayer);
         }
 
+        // ServerCommonPacketListenerImpl → Connection
+        Object connection = innerConnectionField.get(packetListener);
+
+        // Connection → Channel
         return (Channel) channelField.get(connection);
     }
 
@@ -232,6 +237,7 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
 
         Class<?> serverPlayerClass = Class.forName("net.minecraft.server.level.ServerPlayer");
         Class<?> serverCommonPacketListenerImpl = Class.forName("net.minecraft.server.network.ServerCommonPacketListenerImpl");
+        Class<?> connectionClass = Class.forName("net.minecraft.network.Connection");
 
         // Try method first (older Paper), then field (Paper 26.1.2+)
         try {
@@ -242,7 +248,12 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
             getConnectionField.setAccessible(true);
         }
 
-        channelField = serverCommonPacketListenerImpl.getDeclaredField("channel");
+        // ServerCommonPacketListenerImpl.connection → Connection
+        innerConnectionField = serverCommonPacketListenerImpl.getDeclaredField("connection");
+        innerConnectionField.setAccessible(true);
+
+        // Connection.channel → Netty Channel
+        channelField = connectionClass.getDeclaredField("channel");
         channelField.setAccessible(true);
 
         reflectionsInitialized = true;
