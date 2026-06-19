@@ -195,6 +195,53 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - `loadAllFromDisk` 支持新旧格式，旧扁平文件自动迁移到子目录
 - `sanitizeFileName` 清理文件名中的非法字符（`\ / : * ? " < > |`）
 
+### v2.0.0 — 模型缓存机制
+
+**问题：** 客户端每次重连都需要重新上传完整模型文件。Packet 03 始终发送空模型列表（`writeVarInt(0)`），客户端不知道服务端已缓存其模型，因此每次握手完成后自动发送 C2S ModelSync 重新传输。
+
+**解决方案：** 实现与 Fox Model Loader / OpenYSM 兼容的模型缓存机制，客户端通过 hash1/hash2 对比本地缓存，已缓存的模型跳过下载。
+
+**新增组件：**
+
+`YsmZstd.java` — YSM 魔改 Zstd 压缩/解压：
+- 标准 Zstd 块类型映射（RAW→3, RLE→1, COMPRESSED→0）
+- 块大小异或 `0xD4E9` 混淆
+- 依赖 `com.github.luben:zstd-jni:1.5.7-5`
+
+`YsmCrypt.java` 新增方法：
+- `calculateModelHashes(sha256, serverKey)` — SHA256 → MT19937 XOR → CityHash64 生成 hash1/hash2
+- `encryptServerCache(clearText, serverKey, hash1, hash2)` — zstd 压缩 + 随机填充 + MT19937 XOR + ChaCha20 加密 + CityHash64 签名
+- `verifyServerCache(cacheData, hash1, hash2)` — 验证缓存文件签名完整性
+- `modifiedChaChaEncrypt(plainText, key, iv, seed)` — 根据 seed 动态调整轮数和块大小的 ChaCha 加密
+
+**关键变更：**
+
+`ModelFileManager.java`：
+- 新增 `ModelCacheEntry` record（modelId, hash1, hash2）
+- 新增 `cacheDir`（`plugins/YSMSync/cache/`）存储加密缓存文件
+- `storeModelData` / `storeRawModelData` 在存储 S2C 数据的同时创建加密缓存
+- `getPlayerModelEntries(UUID)` 返回玩家所有模型的 hash 条目（供 Packet 03 填充）
+- `getCacheFileData(hash1, hash2)` 读取加密缓存文件（供 Packet 05 发送）
+- `rebuildCacheEntries()` 启动时为已有模型重建缓存条目
+
+`YSMStateManager.java`：
+- `sendPacket03` 从空列表改为遍历所有已缓存模型，写入 hash1/hash2/modelId/isAuth/isCustomSkinModel/format 条目
+- 新增 `sendPacket05` 分块发送加密缓存文件（chunkSize=30720，与 Fox Model Loader 一致）
+- `handleRequestModel` 解析 Packet 04 请求的 hash 列表，触发 `sendPacket05` 发送缺失模型
+
+`build.gradle.kts`：
+- 新增 `com.github.johnrengelman.shadow` 插件，将 zstd-jni shade 并 relocate 到 `com.ysmsync.lib.zstd`
+
+**密钥流转（v2.0.0 最终版）：**
+
+| 包 | 方向 | 加/解密密钥 | 用途 |
+|---|---|---|---|
+| Packet 01 | S→C | publicKey 加密，附带 key1 | 握手发起 |
+| Packet 02 | C→S | key1 加密，附带 clientNextKey | 密钥交换 |
+| Packet 03 | S→C | clientNextKey 加密 | 发送模型 hash 列表 |
+| Packet 04 | C→S | key1 加密 | 请求缺失模型 |
+| Packet 05 | S→C | key1 加密 | 分块发送模型缓存文件 |
+
 ---
 
 ## 项目结构
@@ -209,9 +256,10 @@ YSMSync/
 │   │   ├── MT19937.java            # Mersenne Twister 伪随机数
 │   │   ├── ServerKeyManager.java   # 服务端密钥管理
 │   │   ├── XChaCha20.java          # XChaCha20 流密码
-│   │   └── YsmCrypt.java           # YSM 加密/解密工具
+│   │   ├── YsmCrypt.java           # YSM 加密/解密 + 缓存加密
+│   │   └── YsmZstd.java            # YSM 魔改 Zstd 压缩/解压
 │   ├── model/
-│   │   ├── ModelFileManager.java   # 模型文件存储管理
+│   │   ├── ModelFileManager.java   # 模型文件存储 + 缓存管理
 │   │   └── ModelUploadManager.java # 模型上传管理
 │   ├── net/
 │   │   ├── YSMByteBuf.java         # YSM 小端序 ByteBuf 包装器
@@ -230,7 +278,8 @@ YSMSync/
 ├── src/main/resources/
 │   ├── plugin.yml                  # 插件元数据
 │   └── config.yml                  # 默认配置
-└── build.gradle.kts                # Gradle 构建脚本
+├── build.gradle.kts                # Gradle 构建脚本（含 shadow 插件）
+└── DEVLOG.md                       # 开发日志
 ```
 
 ---
@@ -335,4 +384,6 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.6.7 | `Size mismatch: expected X got Y` 上传数据不完整 | handleUploadChunk 读取 writeByteArray 的 VarInt 长度前缀 |
 | v1.6.7 | 上传成功但 models/ 目录无文件 | 新增 storeRawModelData，原始 .ysm 数据直接包装为 S2C 格式存储 |
 | v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}，自动迁移旧格式 |
+| v2.0.0 | 客户端每次重连重复上传模型 | Packet 03 填充 hash1/hash2，客户端缓存命中跳过下载 |
+| v2.0.0 | 缺少 Zstd 压缩支持 | 引入 zstd-jni，shadow 插件 shade 到 JAR |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

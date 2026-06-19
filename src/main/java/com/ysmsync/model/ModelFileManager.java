@@ -1,46 +1,68 @@
 package com.ysmsync.model;
 
 import com.ysmsync.YSMPlugin;
+import com.ysmsync.crypto.YsmCrypt;
 import com.ysmsync.util.VarIntUtil;
 
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
  * 模型文件存储管理器。
- * 目录结构：plugins/YSMSync/models/{玩家UUID}/{模型名}
+ * 目录结构：
+ * - plugins/YSMSync/models/{玩家UUID}/{模型名}  — S2C 格式模型数据
+ * - plugins/YSMSync/cache/{hash1_hex}{hash2_hex} — 加密缓存文件（供 Packet 05 发送）
  * 每个玩家一个子目录，支持存储多个模型。
  */
 public class ModelFileManager {
 
     private final YSMPlugin plugin;
     private final Path modelsDir;
+    private final Path cacheDir;
+    private byte[] serverKey;
 
     /**
      * 玩家 UUID -> (模型文件名 -> S2C 格式数据)
      */
     private final Map<UUID, Map<String, byte[]>> playerModels = new ConcurrentHashMap<>();
 
+    /**
+     * 模型缓存条目：用于 Packet 03 模型列表。
+     */
+    public record ModelCacheEntry(String modelId, long hash1, long hash2) {}
+
+    /**
+     * 玩家 UUID -> (模型文件名 -> 缓存条目)
+     */
+    private final Map<UUID, Map<String, ModelCacheEntry>> playerCacheEntries = new ConcurrentHashMap<>();
+
     public ModelFileManager(YSMPlugin plugin) {
         this.plugin = plugin;
         this.modelsDir = plugin.getDataFolder().toPath().resolve("models");
+        this.cacheDir = plugin.getDataFolder().toPath().resolve("cache");
         try {
             Files.createDirectories(modelsDir);
+            Files.createDirectories(cacheDir);
         } catch (IOException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to create models directory", e);
+            plugin.getLogger().log(Level.SEVERE, "Failed to create directories", e);
         }
     }
 
     /**
+     * 设置服务端密钥（用于计算模型哈希和加密缓存）。
+     */
+    public void setServerKey(byte[] serverKey) {
+        this.serverKey = serverKey;
+    }
+
+    /**
      * 存储玩家的模型数据（C2SModelSyncPayload 格式）。
-     * 自动转换为 S2C 格式后存储。
-     *
-     * @param playerUuid 玩家 UUID
-     * @param rawData    客户端发送的 C2SModelSyncPayload 原始数据
+     * 自动转换为 S2C 格式后存储，并创建加密缓存文件。
      */
     public void storeModelData(UUID playerUuid, byte[] rawData) {
         byte[] s2cData = convertC2S_to_S2C(rawData);
@@ -48,6 +70,12 @@ public class ModelFileManager {
 
         String name = "model";
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(name, s2cData);
+
+        // 提取模型二进制数据（去掉 S2C 包头 VarInt）
+        byte[] modelBinary = extractModelBinary(s2cData);
+        if (modelBinary != null) {
+            createCacheEntry(playerUuid, name, modelBinary);
+        }
 
         Path playerDir = modelsDir.resolve(playerUuid.toString());
         Path file = playerDir.resolve(name);
@@ -64,11 +92,7 @@ public class ModelFileManager {
 
     /**
      * 存储上传的原始 .ysm 文件数据。
-     * 自动包装为 S2C 格式（packetId=1 + 原始数据）后存储。
-     *
-     * @param playerUuid 玩家 UUID
-     * @param modelName  模型名称（用作文件名）
-     * @param rawData    原始 .ysm 文件字节
+     * 自动包装为 S2C 格式（packetId=1 + 原始数据）后存储，并创建加密缓存文件。
      */
     public void storeRawModelData(UUID playerUuid, String modelName, byte[] rawData) {
         if (rawData == null || rawData.length == 0) return;
@@ -85,6 +109,9 @@ public class ModelFileManager {
 
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(safeName, s2cData);
 
+        // 用原始数据创建加密缓存
+        createCacheEntry(playerUuid, safeName, rawData);
+
         Path playerDir = modelsDir.resolve(playerUuid.toString());
         Path file = playerDir.resolve(safeName);
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
@@ -96,6 +123,79 @@ public class ModelFileManager {
                 plugin.getLogger().log(Level.WARNING, "Failed to save raw model data for " + playerUuid + "/" + safeName, e);
             }
         });
+    }
+
+    /**
+     * 创建加密缓存条目（异步）。
+     * 计算模型 SHA256 → hash1/hash2 → 加密缓存文件。
+     */
+    private void createCacheEntry(UUID playerUuid, String modelName, byte[] modelBinary) {
+        if (serverKey == null) return;
+
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                String sha256 = sha256Hex(modelBinary);
+                long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
+                long hash1 = hashes[0];
+                long hash2 = hashes[1];
+
+                String cacheFileName = String.format("%016x%016x", hash1, hash2);
+                Path cacheFile = cacheDir.resolve(cacheFileName);
+
+                // 如果缓存文件不存在，创建加密缓存
+                if (!Files.exists(cacheFile)) {
+                    byte[] encrypted = YsmCrypt.encryptServerCache(modelBinary, serverKey, hash1, hash2);
+                    Files.write(cacheFile, encrypted);
+                    plugin.logDebug("Created cache file: " + cacheFileName + " (" + encrypted.length + " bytes)");
+                }
+
+                // 存储缓存条目
+                ModelCacheEntry entry = new ModelCacheEntry(modelName, hash1, hash2);
+                playerCacheEntries
+                        .computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>())
+                        .put(modelName, entry);
+
+                plugin.logDebug("Cache entry created for " + playerUuid + "/" + modelName
+                        + " sha256=" + sha256.substring(0, 16) + "...");
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.WARNING, "Failed to create cache entry for " + playerUuid + "/" + modelName, e);
+            }
+        });
+    }
+
+    /**
+     * 获取玩家的所有模型缓存条目（用于填充 Packet 03）。
+     * 如果内存中没有，尝试从磁盘加载。
+     */
+    public List<ModelCacheEntry> getPlayerModelEntries(UUID playerUuid) {
+        Map<String, ModelCacheEntry> entries = playerCacheEntries.get(playerUuid);
+        if (entries != null && !entries.isEmpty()) {
+            return new ArrayList<>(entries.values());
+        }
+
+        // 尝试从磁盘加载
+        loadFromDisk(playerUuid);
+        entries = playerCacheEntries.get(playerUuid);
+        if (entries != null && !entries.isEmpty()) {
+            return new ArrayList<>(entries.values());
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * 根据 hash1/hash2 获取加密缓存文件数据（用于 Packet 05 发送）。
+     */
+    public byte[] getCacheFileData(long hash1, long hash2) {
+        String cacheFileName = String.format("%016x%016x", hash1, hash2);
+        Path cacheFile = cacheDir.resolve(cacheFileName);
+        try {
+            if (Files.exists(cacheFile)) {
+                return Files.readAllBytes(cacheFile);
+            }
+        } catch (IOException e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to read cache file: " + cacheFileName, e);
+        }
+        return null;
     }
 
     /**
@@ -122,6 +222,7 @@ public class ModelFileManager {
      */
     public void removeModelData(UUID playerUuid) {
         playerModels.remove(playerUuid);
+        playerCacheEntries.remove(playerUuid);
         Path playerDir = modelsDir.resolve(playerUuid.toString());
         try {
             if (Files.isDirectory(playerDir)) {
@@ -139,9 +240,7 @@ public class ModelFileManager {
 
     /**
      * 启动时从磁盘加载所有已存储的模型数据到内存。
-     * 支持两种目录结构：
-     * - 新格式：models/{UUID}/{模型名}
-     * - 旧格式：models/{UUID}.ysm（自动迁移到新格式）
+     * 同时尝试重建缓存条目（如果缓存文件存在但内存条目缺失）。
      */
     public void loadAllFromDisk() {
         if (!Files.exists(modelsDir)) return;
@@ -152,7 +251,6 @@ public class ModelFileManager {
                 String name = entry.getFileName().toString();
 
                 if (Files.isDirectory(entry)) {
-                    // 新格式：子目录
                     try {
                         UUID uuid = UUID.fromString(name);
                         count += loadFromDisk(uuid);
@@ -186,6 +284,51 @@ public class ModelFileManager {
         if (count > 0) {
             plugin.getLogger().info("Loaded " + count + " model files from disk");
         }
+
+        // 为已加载的模型重建缓存条目（如果缓存文件已存在）
+        if (serverKey != null) {
+            rebuildCacheEntries();
+        }
+    }
+
+    /**
+     * 为已加载但缺少缓存条目的模型重建条目。
+     */
+    private void rebuildCacheEntries() {
+        for (Map.Entry<UUID, Map<String, byte[]>> playerEntry : playerModels.entrySet()) {
+            UUID uuid = playerEntry.getKey();
+            Map<String, ModelCacheEntry> existingEntries = playerCacheEntries.getOrDefault(uuid, Collections.emptyMap());
+
+            for (Map.Entry<String, byte[]> modelEntry : playerEntry.getValue().entrySet()) {
+                String modelName = modelEntry.getKey();
+                if (existingEntries.containsKey(modelName)) continue;
+
+                byte[] s2cData = modelEntry.getValue();
+                byte[] modelBinary = extractModelBinary(s2cData);
+                if (modelBinary == null) continue;
+
+                try {
+                    String sha256 = sha256Hex(modelBinary);
+                    long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
+                    String cacheFileName = String.format("%016x%016x", hashes[0], hashes[1]);
+                    Path cacheFile = cacheDir.resolve(cacheFileName);
+
+                    // 如果缓存文件不存在，创建它
+                    if (!Files.exists(cacheFile)) {
+                        byte[] encrypted = YsmCrypt.encryptServerCache(modelBinary, serverKey, hashes[0], hashes[1]);
+                        Files.write(cacheFile, encrypted);
+                        plugin.logDebug("Rebuilt cache file: " + cacheFileName);
+                    }
+
+                    ModelCacheEntry entry = new ModelCacheEntry(modelName, hashes[0], hashes[1]);
+                    playerCacheEntries
+                            .computeIfAbsent(uuid, k -> new ConcurrentHashMap<>())
+                            .put(modelName, entry);
+                } catch (Exception e) {
+                    plugin.getLogger().log(Level.WARNING, "Failed to rebuild cache entry for " + uuid + "/" + modelName, e);
+                }
+            }
+        }
     }
 
     /**
@@ -204,11 +347,24 @@ public class ModelFileManager {
             for (Path file : stream) {
                 if (!Files.isRegularFile(file)) continue;
                 String fileName = file.getFileName().toString();
-                // 旧格式带 .ysm 后缀，迁移后去除；新格式无后缀
                 String modelName = fileName.endsWith(".ysm") ? fileName.replace(".ysm", "") : fileName;
                 try {
                     byte[] data = Files.readAllBytes(file);
                     models.put(modelName, data);
+
+                    // 尝试为加载的模型重建缓存条目
+                    if (serverKey != null && !playerCacheEntries.containsKey(playerUuid)) {
+                        byte[] modelBinary = extractModelBinary(data);
+                        if (modelBinary != null) {
+                            String sha256 = sha256Hex(modelBinary);
+                            long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
+                            ModelCacheEntry entry = new ModelCacheEntry(modelName, hashes[0], hashes[1]);
+                            playerCacheEntries
+                                    .computeIfAbsent(playerUuid, k2 -> new ConcurrentHashMap<>())
+                                    .put(modelName, entry);
+                        }
+                    }
+
                     count++;
                 } catch (IOException e) {
                     plugin.getLogger().log(Level.WARNING, "Failed to load model file: " + file, e);
@@ -218,6 +374,39 @@ public class ModelFileManager {
             plugin.getLogger().log(Level.WARNING, "Failed to scan player directory: " + playerDir, e);
         }
         return count;
+    }
+
+    /**
+     * 从 S2C 格式数据中提取模型二进制数据（去掉包头 VarInt）。
+     */
+    private byte[] extractModelBinary(byte[] s2cData) {
+        try {
+            ByteBuffer buf = ByteBuffer.wrap(s2cData);
+            VarIntUtil.readVarInt(buf); // 跳过 packetId
+            int remaining = buf.remaining();
+            byte[] binary = new byte[remaining];
+            buf.get(binary);
+            return binary;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 计算 SHA256 并返回十六进制字符串。
+     */
+    private String sha256Hex(byte[] data) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /**
@@ -255,5 +444,6 @@ public class ModelFileManager {
 
     public void shutdown() {
         playerModels.clear();
+        playerCacheEntries.clear();
     }
 }

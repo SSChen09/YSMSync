@@ -8,6 +8,12 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 
 ## 最近更新
 
+### v2.0.0
+
+- **模型缓存机制** — Packet 03 携带服务端已缓存模型的 hash1/hash2，客户端对比本地缓存决定是否跳过下载，避免每次重连重复传输模型文件
+- **Packet 05 分块发送** — 客户端缓存未命中时，服务端通过加密缓存文件分块发送模型数据
+- **zstd-jni 依赖** — 引入 zstd-jni 实现 YSM 魔改 Zstd 压缩/解压，shadow 插件自动 shade 到 JAR
+
 ### v1.7.0
 
 - **存储路径重构** — 模型存储从 `models/{UUID}.ysm` 改为 `models/{UUID}/{模型名}`，支持每个玩家存储多个模型，旧格式自动迁移
@@ -17,15 +23,10 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 - **修复模型上传存储** — 上传完成后的原始 .ysm 数据不含 C2S packetId 前缀，`convertC2S_to_S2C` 匹配失败导致文件未写入磁盘，新增 `storeRawModelData` 直接包装为 S2C 格式存储
 - **修复模型上传分块解析** — `handleUploadChunk` 未读取 `writeByteArray` 的 VarInt 长度前缀，导致每个 chunk 多读 2 字节，累积后最后一个 chunk 因 overflow 被拒绝，上传数据不完整
 
-### v1.6.6
-
-- **修复模型上传分块大小** — `chunk-size` 默认值从 1MB 改为 32KB，与 Fox Model Loader 客户端一致，修复过大的 custom\_payload 包在 ViaVersion 管道中解码失败导致断线
-- **启用上传功能** — `allow-upload` 默认改为 `true`
-- **开启调试日志** — `debug` 默认改为 `true`
-
 ## 功能
 
 - **模型同步** — 玩家加入或切换模型时，自动广播给所有在线玩家
+- **模型缓存** — 客户端通过 hash1/hash2 对比本地缓存，已缓存的模型跳过下载，避免重复传输
 - **模型文件存储** — 服务端缓存 `.ysm` 模型文件，新玩家加入时自动推送
 - **模型上传** — 客户端可将模型文件上传至服务端存储，默认启用
 - **动画转发** — 转发动画/表情指令给其他玩家
@@ -85,9 +86,11 @@ auto-update: false
 1. 玩家加入时，插件通过 Netty Pipeline 拦截 YSM 自定义频道数据包
 2. 发送版本检查包触发客户端握手
 3. 版本检查通过后，启动加密握手流程（Packet 01-05），完成密钥交换
-4. 握手完成后，同步所有已存储的模型给新玩家
-5. 玩家切换模型时，广播切换信息给其他玩家
-6. 模型文件存储在 `plugins/YSMSync/models/{玩家UUID}/{模型名}` 目录
+4. Packet 03 携带服务端已缓存模型的 hash1/hash2，客户端对比本地缓存决定是否跳过下载
+5. 客户端缓存未命中时发送 Packet 04 请求，服务端通过 Packet 05 分块发送加密缓存文件
+6. 握手完成后，同步所有已存储的模型给新玩家
+7. 玩家切换模型时，广播切换信息给其他玩家
+8. 模型文件存储在 `plugins/YSMSync/models/{玩家UUID}/{模型名}` 目录，加密缓存文件存储在 `plugins/YSMSync/cache/` 目录
 
 ## 更多信息
 
@@ -103,7 +106,7 @@ cd YSMSync
 ./gradlew build
 ```
 
-产物位于 `build/libs/YSMSync-x.x.x.jar`。
+产物位于 `build/libs/YSMSync-x.x.x.jar`（包含 zstd-jni 依赖的完整 JAR）。
 
 ## 致谢
 

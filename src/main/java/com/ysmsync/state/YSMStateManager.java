@@ -4,6 +4,7 @@ import com.ysmsync.YSMPlugin;
 import com.ysmsync.crypto.ServerKeyManager;
 import com.ysmsync.crypto.YsmCrypt;
 import com.ysmsync.model.ModelFileManager;
+import com.ysmsync.model.ModelFileManager.ModelCacheEntry;
 import com.ysmsync.net.YSMByteBuf;
 import com.ysmsync.storage.YSMStorage;
 import com.ysmsync.util.VarIntUtil;
@@ -13,6 +14,8 @@ import org.bukkit.entity.Player;
 
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
@@ -287,7 +290,6 @@ public class YSMStateManager {
      */
     public void initiateHandshake(Player player) {
         PlayerYSMState state = getOrCreate(player.getUniqueId());
-        byte[] serverKey = serverKeyManager.getServerKey();
 
         // 生成 clientKey（固定值，与 OpenYSM 兼容）
         byte[] clientKey = new byte[56];
@@ -349,8 +351,8 @@ public class YSMStateManager {
     }
 
     /**
-     * 发送 Packet 03 (ModelDirectory) - 空模型列表。
-     * 客户端收到后会发送 Packet 04 请求模型。
+     * 发送 Packet 03 (ModelDirectory) - 包含服务端已缓存的模型列表。
+     * 客户端收到后会对比本地缓存，对于已有的模型跳过下载，缺少的通过 Packet 04 请求。
      */
     private void sendPacket03(Player player, PlayerYSMState state) {
         try {
@@ -370,8 +372,19 @@ public class YSMStateManager {
                 outBuf.getRawBuf().writeBytes(serverKey);
                 outBuf.getRawBuf().writeBytes(clientKey);
 
-                // 模型列表（空）
-                outBuf.writeVarInt(0);
+                // 模型列表：遍历服务端已缓存的所有玩家模型
+                List<ModelCacheEntry> allEntries = getAllCachedModelEntries();
+                outBuf.writeVarInt(allEntries.size());
+                for (ModelCacheEntry entry : allEntries) {
+                    outBuf.writeVarLong(entry.hash1());
+                    outBuf.writeVarLong(entry.hash2());
+                    outBuf.writeString(entry.modelId());
+                    outBuf.writeVarInt(0); // isAuth
+                    outBuf.writeVarInt(0); // isCustomSkinModel
+                    outBuf.writeVarInt(32); // format version
+                }
+
+                plugin.logDebug("Packet03: sent " + allEntries.size() + " model entries to " + player.getName());
 
                 // Pack 列表（空）
                 outBuf.writeVarInt(0);
@@ -389,9 +402,74 @@ public class YSMStateManager {
     }
 
     /**
+     * 获取所有已缓存的模型条目（跨所有玩家）。
+     */
+    private List<ModelCacheEntry> getAllCachedModelEntries() {
+        List<ModelCacheEntry> all = new ArrayList<>();
+        for (UUID uuid : states.keySet()) {
+            all.addAll(modelFileManager.getPlayerModelEntries(uuid));
+        }
+        // 也包含已离线但仍有缓存数据的玩家
+        return all;
+    }
+
+    /**
+     * 发送 Packet 05 (ModelData) - 分块发送加密缓存文件。
+     * 客户端通过 Packet 04 请求缺失的模型，服务端读取缓存文件并分块发送。
+     */
+    private void sendPacket05(Player player, PlayerYSMState state, List<long[]> requestedHashes) {
+        try {
+            for (long[] hashes : requestedHashes) {
+                long hash1 = hashes[0];
+                long hash2 = hashes[1];
+
+                byte[] fileData = modelFileManager.getCacheFileData(hash1, hash2);
+                if (fileData == null) {
+                    plugin.logDebug("Cache file not found for hash1=" + Long.toHexString(hash1) + " hash2=" + Long.toHexString(hash2));
+                    continue;
+                }
+
+                int totalSize = fileData.length;
+                int maxChunkSize = 30720; // 与 Fox Model Loader 一致
+                int chunkCount = (totalSize + maxChunkSize - 1) / maxChunkSize;
+                int chunkSize = (totalSize + chunkCount - 1) / chunkCount;
+
+                int offset = 0;
+                while (offset < totalSize) {
+                    int length = Math.min(chunkSize, totalSize - offset);
+
+                    int garbageLen = 16 + random.nextInt(48);
+                    byte[] garbage = new byte[garbageLen];
+                    random.nextBytes(garbage);
+
+                    try (YSMByteBuf outBuf = new YSMByteBuf(Unpooled.buffer())) {
+                        outBuf.writeGarbageHeader(garbageLen, garbage);
+                        outBuf.writeVarInt(5); // Packet 05 类型
+                        outBuf.writeVarLong(hash1);
+                        outBuf.writeVarLong(hash2);
+                        outBuf.writeVarInt(totalSize);
+                        outBuf.writeVarInt(offset);
+                        outBuf.writeVarInt(length);
+                        outBuf.getRawBuf().writeBytes(fileData, offset, length);
+
+                        // 用 key1 加密（与 Fox Model Loader 一致）
+                        YsmCrypt.EncryptedPacket result = YsmCrypt.encrypt(outBuf.toArray(), state.getKey1(), false);
+                        sendModelSyncPayload(player, result.data());
+                        offset += length;
+                    }
+                }
+
+                plugin.logDebug("Sent Packet05 to " + player.getName() + ": hash1=" + Long.toHexString(hash1)
+                        + " total=" + totalSize + " bytes in " + chunkCount + " chunks");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().log(java.util.logging.Level.WARNING, "Failed to send Packet05 to " + player.getName(), e);
+        }
+    }
+
+    /**
      * 处理 RequestModel (Packet 04)。
-     * 客户端请求模型文件。目前模型列表为空，所以无需发送 Packet 05。
-     * 握手完成。
+     * 客户端请求缺失的模型文件，服务端通过 Packet 05 分块发送。
      */
     public void handleRequestModel(Player player, byte[] rawData) {
         PlayerYSMState state = get(player.getUniqueId());
@@ -402,21 +480,29 @@ public class YSMStateManager {
             byte[] decrypted = YsmCrypt.decrypt(rawData, state.getKey1());
             if (decrypted == null || decrypted.length < 3) return;
 
+            List<long[]> requestedHashes = new ArrayList<>();
+
             try (YSMByteBuf buf = new YSMByteBuf(Unpooled.wrappedBuffer(decrypted))) {
                 buf.skipGarbageHeader();
                 if (buf.getRawBuf().readByte() != 0x04) return;
 
-                // 读取请求的模型哈希列表（暂不处理）
                 int numRequests = buf.readVarInt();
+                for (int i = 0; i < numRequests; i++) {
+                    long hash1 = buf.readVarLong();
+                    long hash2 = buf.readVarLong();
+                    requestedHashes.add(new long[]{hash1, hash2});
+                }
                 plugin.logDebug("Received RequestModel from " + player.getName() + " with " + numRequests + " requests");
+            }
+
+            // 如果有请求的模型，通过 Packet 05 发送缓存文件
+            if (!requestedHashes.isEmpty()) {
+                sendPacket05(player, state, requestedHashes);
             }
 
             // 握手完成
             state.setSyncStep(3);
             state.setHandshakeCompleted(true);
-
-            // 注意：握手完成后不再发送 VersionCheck，否则客户端会重新触发握手导致循环
-            // Fox Model Loader 在收到 Packet 04 后直接进入 onSyncComplete，不等待额外包
 
             // 向该玩家同步所有其他玩家的模型
             syncAllModelsToJoiningPlayer(player);

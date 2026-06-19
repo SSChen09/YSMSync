@@ -64,6 +64,7 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
         // 初始化模型文件管理器
         modelFileManager = new ModelFileManager(this);
+        modelFileManager.setServerKey(serverKeyManager.getServerKey());
         modelFileManager.loadAllFromDisk();
 
         // 初始化上传管理器

@@ -1,9 +1,10 @@
 plugins {
     java
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.ysmsync"
-version = "1.7.0"
+version = "2.0.0"
 
 repositories {
     mavenCentral()
@@ -13,6 +14,7 @@ repositories {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
     compileOnly("io.netty:netty-all:4.1.118.Final")
+    implementation("com.github.luben:zstd-jni:1.5.7-5")
 }
 
 java {
@@ -27,6 +29,12 @@ tasks.processResources {
     }
 }
 
+tasks.shadowJar {
+    archiveClassifier.set("")
+    relocate("com.github.luben.zstd", "com.ysmsync.lib.zstd")
+}
+
 tasks.jar {
-    archiveFileName.set("YSMSync-${version}.jar")
+    archiveClassifier.set("slim")
+    archiveFileName.set("YSMSync-${version}-slim.jar")
 }
