@@ -1,0 +1,6 @@
+name: YSMSync
+version: '${version}'
+main: com.ysmsync.YSMPlugin
+api-version: '1.21'
+description: Yes Steve Model packet sync for Paper servers
+authors: [YSMSync]

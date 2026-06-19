@@ -1,0 +1,250 @@
+package com.ysmsync.net;
+
+import com.ysmsync.YSMPlugin;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelPipeline;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+
+/**
+ * Netty 拦截器：在服务端 PacketDecoder 之前捕获 YSM 自定义频道数据包。
+ *
+ * Pipeline 顺序：FrameDecoder -> [YSMChannelHandler] -> PacketDecoder -> ...
+ *
+ * 原始 ByteBuf 在 FrameDecoder 之后、PacketDecoder 之前到达本 handler。
+ * 本 handler 读取 VarInt packetId，如果是 YSM 频道包则直接处理，
+ * 不传递给后方的 PacketDecoder，从而避免 "unknown packet id" 异常。
+ */
+public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
+
+    private static final String HANDLER_NAME = "ysmsync_handler";
+
+    private static Method getHandleMethod;
+    private static Method getConnectionMethod;
+    private static Field getConnectionField;
+    private static Field channelField;
+    private static boolean reflectionsInitialized = false;
+
+    private static final Map<String, Channel> channelCache = new ConcurrentHashMap<>();
+
+    private final YSMPlugin plugin;
+
+    public YSMChannelHandler(YSMPlugin plugin) {
+        this.plugin = plugin;
+    }
+
+    /**
+     * 注入到玩家 Pipeline，放在 decoder (PacketDecoder) 之前。
+     */
+    public static void inject(Player player, YSMPlugin plugin) {
+        try {
+            Channel channel = getNettyChannel(player);
+            if (channel == null) return;
+
+            ChannelPipeline pipeline = channel.pipeline();
+            if (pipeline.get(HANDLER_NAME) != null) {
+                pipeline.remove(HANDLER_NAME);
+            }
+
+            // 放在 decoder 之前，这样我们能在 PacketDecoder 之前拦截原始 ByteBuf
+            pipeline.addBefore("decoder", HANDLER_NAME, new YSMChannelHandler(plugin));
+            channelCache.put(player.getUniqueId().toString(), channel);
+
+            plugin.logDebug("Injected YSM handler for " + player.getName());
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to inject YSM handler for " + player.getName(), e);
+        }
+    }
+
+    public static void remove(Player player, YSMPlugin plugin) {
+        try {
+            Channel channel = channelCache.remove(player.getUniqueId().toString());
+            if (channel != null && channel.pipeline().get(HANDLER_NAME) != null) {
+                channel.pipeline().remove(HANDLER_NAME);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (!(msg instanceof ByteBuf buf)) {
+            super.channelRead(ctx, msg);
+            return;
+        }
+
+        if (buf.readableBytes() < 1) {
+            super.channelRead(ctx, msg);
+            return;
+        }
+
+        int readerIndex = buf.readerIndex();
+
+        try {
+            int packetId = readVarInt(buf);
+
+            // 路径1: Minecraft CustomPayload serverbound packet ID = 0x17 (23)
+            if (packetId == 0x17) {
+                if (handleCustomPayload(ctx, buf)) {
+                    buf.release(); // 已处理，释放 ByteBuf
+                    return;
+                }
+                // 不是 YSM 频道，回退让 decoder 处理
+                buf.readerIndex(readerIndex);
+                super.channelRead(ctx, msg);
+                return;
+            }
+
+            // 路径2: YSM 客户端直接发送自定义 packetId (1-74)
+            // Fabric/NeoForge 的 YSM mod 使用自定义网络通道，直接发送带有协议 ID 的原始包
+            if (packetId >= 1 && packetId <= 74) {
+                // 提取完整数据（包含 packetId）
+                byte[] data = new byte[buf.readableBytes() + varIntSize(packetId)];
+                // 重新从 readerIndex 开始写入
+                buf.readerIndex(readerIndex);
+                buf.getBytes(readerIndex, data);
+
+                buf.release(); // 释放原始 ByteBuf
+                dispatchToPlugin(ctx, data);
+                return;
+            }
+
+        } catch (Exception e) {
+            // 解析失败，回退让 decoder 处理
+            buf.readerIndex(readerIndex);
+        }
+
+        // 不是 YSM 包，传递给后方的 PacketDecoder
+        super.channelRead(ctx, msg);
+    }
+
+    private boolean handleCustomPayload(ChannelHandlerContext ctx, ByteBuf buf) {
+        int mark = buf.readerIndex();
+        try {
+            String namespace = readString(buf);
+            String key = readString(buf);
+            String channel = namespace + ":" + key;
+
+            if (channel.startsWith("yes_steve_model:")) {
+                // 提取 payload（channel 之后的所有字节）
+                int payloadStart = buf.readerIndex();
+                int payloadLen = buf.readableBytes();
+                byte[] payload = new byte[payloadLen];
+                buf.getBytes(payloadStart, payload);
+
+                dispatchToPlugin(ctx, payload);
+                return true;
+            }
+
+            return false;
+        } catch (Exception e) {
+            buf.readerIndex(mark);
+            return false;
+        }
+    }
+
+    private void dispatchToPlugin(ChannelHandlerContext ctx, byte[] payload) {
+        Player player = findPlayerByChannel(ctx.channel());
+        if (player == null) {
+            plugin.logDebug("YSM packet received but no player found for channel");
+            return;
+        }
+
+        byte[] copy = payload.clone();
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            plugin.getPacketHandler().handleIncoming(player, copy);
+        });
+    }
+
+    private Player findPlayerByChannel(Channel channel) {
+        try {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                Channel playerChannel = getNettyChannel(player);
+                if (playerChannel == channel) {
+                    return player;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String readString(ByteBuf buf) {
+        int len = readVarInt(buf);
+        byte[] bytes = new byte[len];
+        buf.readBytes(bytes);
+        return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static int readVarInt(ByteBuf buf) {
+        int value = 0;
+        int shift = 0;
+        byte current;
+        do {
+            current = buf.readByte();
+            value |= (current & 0x7F) << shift;
+            shift += 7;
+            if (shift > 35) throw new RuntimeException("VarInt too big");
+        } while ((current & 0x80) != 0);
+        return value;
+    }
+
+    private static int varIntSize(int value) {
+        int size = 0;
+        do {
+            value >>>= 7;
+            size++;
+        } while (value != 0);
+        return size;
+    }
+
+    // === NMS 反射 ===
+
+    private static Channel getNettyChannel(Player player) throws Exception {
+        initReflections();
+        Object serverPlayer = getHandleMethod.invoke(player);
+
+        // Paper 26.1.2+: connection is a field; older: method
+        Object connection;
+        if (getConnectionMethod != null) {
+            connection = getConnectionMethod.invoke(serverPlayer);
+        } else {
+            connection = getConnectionField.get(serverPlayer);
+        }
+
+        return (Channel) channelField.get(connection);
+    }
+
+    private static synchronized void initReflections() throws Exception {
+        if (reflectionsInitialized) return;
+
+        Class<?> craftPlayerClass = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer");
+        getHandleMethod = craftPlayerClass.getMethod("getHandle");
+
+        Class<?> serverPlayerClass = Class.forName("net.minecraft.server.level.ServerPlayer");
+        Class<?> serverCommonPacketListenerImpl = Class.forName("net.minecraft.server.network.ServerCommonPacketListenerImpl");
+
+        // Try method first (older Paper), then field (Paper 26.1.2+)
+        try {
+            getConnectionMethod = serverPlayerClass.getMethod("connection");
+        } catch (NoSuchMethodException e) {
+            getConnectionMethod = null;
+            getConnectionField = serverPlayerClass.getDeclaredField("connection");
+            getConnectionField.setAccessible(true);
+        }
+
+        channelField = serverCommonPacketListenerImpl.getDeclaredField("channel");
+        channelField.setAccessible(true);
+
+        reflectionsInitialized = true;
+    }
+}
