@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.ysmsync"
-version = "A1.6.6"
+version = "1.6.6"
 
 repositories {
     mavenCentral()
