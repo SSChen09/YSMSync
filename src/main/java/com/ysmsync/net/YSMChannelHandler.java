@@ -124,9 +124,8 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
     private boolean handleCustomPayload(ChannelHandlerContext ctx, ByteBuf buf) {
         int mark = buf.readerIndex();
         try {
-            String namespace = readString(buf);
-            String key = readString(buf);
-            String channel = namespace + ":" + key;
+            // Minecraft CustomPayload 中频道名是单个 ResourceLocation 字符串（如 "yes_steve_model:2_6_0"）
+            String channel = readString(buf);
 
             if (channel.startsWith("yes_steve_model:")) {
                 // 提取 payload（channel 之后的所有字节）

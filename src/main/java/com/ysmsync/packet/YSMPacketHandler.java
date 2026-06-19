@@ -66,40 +66,29 @@ public class YSMPacketHandler {
         try {
             ByteBuffer buf = ByteBuffer.wrap(data);
 
-            // 检查是否是加密握手包（通过 syncStep 判断）
+            // 先读取 VarInt 包 ID（所有 C2S 包都以 VarInt packetId 开头）
+            int packetId = VarIntUtil.readVarInt(buf);
+
+            // 根据 syncStep 处理加密握手包（Packet 02/04 都走 C2SModelSyncPayload 通道）
             PlayerYSMState state = stateManager.get(player.getUniqueId());
             if (state != null) {
                 int syncStep = state.getSyncStep();
-                if (syncStep == 1) {
+                if (syncStep == 1 && packetId == C2S_MODEL_SYNC) {
                     // 等待 HandshakePong (Packet 02)
-                    // data 是原始加密数据（无 discriminator 前缀，因为 Paper 的 CustomPayload 直接给 raw bytes）
-                    // 但实际上客户端发送的 C2SModelSyncPayload 包含 discriminator=2
-                    // 我们需要跳过 discriminator 字节
-                    if (data.length > 1 && (data[0] & 0xFF) == C2S_MODEL_SYNC) {
-                        byte[] encryptedPayload = new byte[data.length - 1];
-                        System.arraycopy(data, 1, encryptedPayload, 0, encryptedPayload.length);
-                        stateManager.handleHandshakePong(player, encryptedPayload);
-                        return true;
-                    }
-                    // 如果没有 discriminator 前缀，直接尝试解密
-                    stateManager.handleHandshakePong(player, data);
+                    byte[] remaining = new byte[buf.remaining()];
+                    buf.get(remaining);
+                    stateManager.handleHandshakePong(player, remaining);
                     return true;
-                } else if (syncStep == 2) {
+                } else if (syncStep == 2 && packetId == C2S_MODEL_SYNC) {
                     // 等待 RequestModel (Packet 04)
-                    if (data.length > 1 && (data[0] & 0xFF) == C2S_MODEL_SYNC) {
-                        byte[] encryptedPayload = new byte[data.length - 1];
-                        System.arraycopy(data, 1, encryptedPayload, 0, encryptedPayload.length);
-                        stateManager.handleRequestModel(player, encryptedPayload);
-                        return true;
-                    }
-                    stateManager.handleRequestModel(player, data);
+                    byte[] remaining = new byte[buf.remaining()];
+                    buf.get(remaining);
+                    stateManager.handleRequestModel(player, remaining);
                     return true;
                 }
             }
 
-            // 正常数据包处理（读取 VarInt discriminator）
-            int packetId = VarIntUtil.readVarInt(buf);
-
+            // 正常数据包处理
             switch (packetId) {
                 case C2S_VERSION_CHECK -> handleVersionCheck(player, buf);
                 case C2S_MODEL_SYNC -> handleModelSync(player, buf, data);

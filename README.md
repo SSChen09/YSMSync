@@ -8,6 +8,10 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.6.2
+- **修复 CustomPayload 频道名读取** — `handleCustomPayload` 错误读取两个字符串作为频道名，导致 payload 被截断，客户端卡在握手；改为读取单个 ResourceLocation 字符串
+- **修复解密数据包路由** — `handleIncoming` 重构：先读 VarInt packetId 再结合 syncStep 判断，用 `buf.remaining()` 提取纯加密数据，修复 `Integrity check failed` 导致客户端卡在"正在上传到服务器"
+
 ### v1.6.1
 - **修复握手解密密钥错误** — `handleRequestModel` 错误使用 `key1` 解密 Packet 04，改为正确的 `clientNextKey`，修复握手永远无法完成的问题
 - **修复模型实时同步格式** — `relayRawPacket` 广播 C2S 格式数据导致其他客户端无法识别，改为广播已转换的 S2C 格式
@@ -18,11 +22,6 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 - **加密握手协议** — 移植 OpenYSM 加密握手（Packet 01-05），修复客户端卡在"正在校验"的问题
 - **ServerKey 持久化** — 服务端密钥自动生成并持久化，重启后保持兼容
 - **GitHub 下载加速** — 下载超时自动回退 gh-proxy.org 镜像加速
-
-### v1.5.1
-- **修复 AuthMe 兼容** — 移除误拦截原版数据包的路径，解决与 AuthMe 等登录插件冲突的问题
-- **修复 ByteBuf 释放后访问** — `finally` 块不再访问已释放的 Netty ByteBuf
-- **数据包边界检查** — `readString` / `readVarIntArray` 增加长度校验，防止畸形包导致崩溃
 
 ## 功能
 
