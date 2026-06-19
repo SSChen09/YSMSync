@@ -36,4 +36,4 @@ tasks.shadowJar {
 }
 
 // shadowJar 替代 jar 作为主产物，禁用 jar 避免冲突
-tasks.jar.enabled = false
+tasks.jar { enabled = false }
