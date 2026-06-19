@@ -20,7 +20,7 @@ public class YsmZstd {
      * 标准 Zstd 压缩 + YSM Block Header 混淆。
      */
     public static byte[] compress(byte[] data) {
-        byte[] zstdData = Zstd.compressByteArray(data, 3);
+        byte[] zstdData = Zstd.compress(data, 3);
         return obfuscate(zstdData);
     }
 
@@ -32,10 +32,10 @@ public class YsmZstd {
         long decompressedSize = Zstd.decompressedSize(washed);
         if (decompressedSize >= 0) {
             byte[] output = new byte[(int) decompressedSize];
-            Zstd.decompressByteArray(output, washed);
+            Zstd.decompressByteArray(output, 0, output.length, washed, 0, washed.length);
             return output;
         }
-        return Zstd.decompressByteArray(washed, (int) Zstd.getFrameContentSize(washed));
+        return Zstd.decompress(washed, (int) Zstd.getFrameContentSize(washed));
     }
 
     /**
