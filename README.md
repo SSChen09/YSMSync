@@ -130,6 +130,14 @@ cd YSMSync
 
 产物位于 `build/libs/YSMSync-x.x.x.jar`。
 
+## 致谢
+
+本项目的实现思路和协议解析参考了以下项目：
+
+- [OpenYSM / YesSteveModel](https://github.com/OpenYSM/YesSteveModel) — YSM 协议定义与客户端模组实现
+- [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) — 基于 OpenYSM 的 Fabric/NeoForge 客户端模组，提供了协议细节参考
+- [Freesia II](https://github.com/FreesiaTeam/Freesia) — 跨服模型同步架构设计，其实体 ID 映射与分层同步思路对本项目的 Netty 拦截方案有重要启发
+
 ## 许可证
 
 MIT License
