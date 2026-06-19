@@ -118,7 +118,8 @@ public class ModelUploadManager {
     public boolean handleUploadChunk(ByteBuffer buf) {
         long uploadId = VarIntUtil.readVarLong(buf);
         int offset = VarIntUtil.readVarInt(buf);
-        int dataLen = buf.remaining();
+        // 客户端使用 writeByteArray，数据前有 VarInt 长度前缀
+        int dataLen = VarIntUtil.readVarInt(buf);
         byte[] data = new byte[dataLen];
         buf.get(data);
 

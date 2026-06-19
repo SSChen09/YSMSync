@@ -159,11 +159,16 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 ### v1.6.6 — 模型上传修复
 
-**问题：** 客户端上传模型时服务端断线，报 `DecoderException: Failed to decode packet 'serverbound/minecraft:custom_payload'`。
+**问题 1：** 客户端上传模型时服务端断线，报 `DecoderException: Failed to decode packet 'serverbound/minecraft:custom_payload'`。
 
-**根因：** `upload.chunk-size` 默认值 1048576（1MB）过大。Fox Model Loader 客户端使用 chunkSize=32000（32KB），但服务端配置为 1MB，导致单个 custom_payload 包过大，在 ViaVersion 的 Netty 管道中解码失败。客户端日志确认：1.15MB 模型仅拆成 2 块（1MB + 0.15MB），而非预期的 ~36 块。
+**根因：** `upload.chunk-size` 默认值 1048576（1MB）过大。Fox Model Loader 客户端使用 chunkSize=32000（32KB），但服务端配置为 1MB，导致单个 custom_payload 包过大，在 ViaVersion 的 Netty 管道中解码失败。
+
+**问题 2：** chunk-size 修复后上传仍失败，客户端显示 `Size mismatch: expected 560917 got 544051`。
+
+**根因：** 客户端 UploadChunk 使用 `writeByteArray(data)` 发送数据，会在数据前加 VarInt 长度前缀（2 字节）。服务端 `handleUploadChunk` 用 `buf.remaining()` 读取剩余所有字节，把长度前缀也算入数据。每 32KB chunk 多读 2 字节，18 个 chunk 共多读 36 字节。前 17 个 chunk 正常写入缓冲区，第 18 个触发 overflow 被拒绝，缓冲区缺少最后一个 chunk 的全部数据。
 
 **修复：**
+- `handleUploadChunk` 改为先 `readVarInt` 读取长度前缀，再读取指定长度的数据
 - `chunk-size` 默认值从 1048576 改为 32000，与 Fox Model Loader 客户端一致
 - `allow-upload` 默认改为 `true`
 - `debug` 默认改为 `true`
@@ -278,4 +283,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.6.4 | 握手循环导致 `unknown packet id 72` 断线 | 移除握手后 VersionCheck 发送 |
 | v1.6.5 | 客户端 UI 反复闪烁"准备中" | handleVersionCheck 添加 syncStep 前置检查 |
 | v1.6.6 | `DecoderException: Failed to decode custom_payload` 上传断线 | chunk-size 从 1MB 改为 32KB，与 Fox Model Loader 客户端一致 |
+| v1.6.6 | `Size mismatch: expected X got Y` 上传数据不完整 | handleUploadChunk 读取 writeByteArray 的 VarInt 长度前缀 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

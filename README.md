@@ -9,17 +9,22 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 ## 最近更新
 
 ### v1.6.6
-- **修复模型上传** — `chunk-size` 默认值从 1MB 改为 32KB，与 Fox Model Loader 客户端一致，修复过大的 custom_payload 包在 ViaVersion 管道中解码失败导致断线的问题
+
+- **修复模型上传分块解析** — `handleUploadChunk` 未读取 `writeByteArray` 的 VarInt 长度前缀，导致每个 chunk 多读 2 字节，累积后最后一个 chunk 因 overflow 被拒绝，上传数据不完整
+- **修复模型上传分块大小** — `chunk-size` 默认值从 1MB 改为 32KB，与 Fox Model Loader 客户端一致，修复过大的 custom\_payload 包在 ViaVersion 管道中解码失败导致断线
 - **启用上传功能** — `allow-upload` 默认改为 `true`
 - **开启调试日志** — `debug` 默认改为 `true`
 
 ### v1.6.5
+
 - **修复重复握手** — `handleVersionCheck` 无条件调用 `initiateHandshake()`，导致 CapabilityEvent 重发 VersionCheck 时重复触发握手，客户端 UI 反复闪烁"准备中"
 
 ### v1.6.4
+
 - **修复握手循环** — 握手完成后不再发送 `VersionCheck`，避免客户端重复触发握手导致握手循环和上传崩溃
 
 ### v1.6.2
+
 - **修复 CustomPayload 频道名读取** — `handleCustomPayload` 错误读取两个字符串作为频道名，导致 payload 被截断，客户端卡在握手；改为读取单个 ResourceLocation 字符串
 - **修复解密数据包路由** — `handleIncoming` 重构：先读 VarInt packetId 再结合 syncStep 判断，用 `buf.remaining()` 提取纯加密数据，修复 `Integrity check failed` 导致客户端卡在"正在上传到服务器"
 - **修复模型实时同步格式** — `relayRawPacket` 广播 C2S 格式数据导致其他客户端无法识别，改为广播已转换的 S2C 格式
