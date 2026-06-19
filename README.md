@@ -2,7 +2,7 @@
 
 > **Warning** 本项目使用 GitHub Actions 自动构建，作者也无法保证每个构建版本完全没有 bug。如遇问题请到 [Issues](https://github.com/SSChen09/YSMSync/issues) 反馈。
 
-Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/OpenYSM) / [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) 的模型同步功能。
+Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-steve-model) / [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) 的模型同步功能。
 
 玩家在客户端安装 YSM 模组后，服务器自动同步所有玩家的模型选择，使每个人都能看到彼此的自定义模型。
 
