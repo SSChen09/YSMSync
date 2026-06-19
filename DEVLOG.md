@@ -254,6 +254,12 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **修复：** `storeModelData` 新增前置检查：如果玩家 `playerModels` 中已有数据（来自上传流程），直接跳过，避免 C2S ModelSync 覆盖已上传的命名模型。
 
+### v2.0.6 — 修复模型数据未返回客户端
+
+**问题：** `sendPacket03` 发送完毕后立即将 `syncStep` 设为 3，但 `YSMPacketHandler` 只在 `syncStep == 2` 时处理 Packet 04（RequestModel）。客户端在收到 Packet 03 合法发送的 Packet 04 被静默丢弃，导致模型二进制数据永远无法通过 Packet 05 传输到客户端。
+
+**修复：** `YSMPacketHandler.handleIncoming` 中 Packet 04 的处理条件从 `syncStep == 2` 改为 `syncStep >= 2`，允许在握手已完成状态下仍处理模型数据请求。
+
 ---
 
 ## 项目结构
