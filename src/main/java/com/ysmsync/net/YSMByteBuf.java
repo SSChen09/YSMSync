@@ -25,6 +25,10 @@ public class YSMByteBuf implements AutoCloseable {
     public int skipGarbageHeader() {
         int garbageLen = buf.readByte() & 0x7F;
         buf.skipBytes(1);
+        if (buf.readableBytes() < garbageLen) {
+            throw new IllegalArgumentException(
+                    "Garbage header length " + garbageLen + " exceeds readable bytes " + buf.readableBytes());
+        }
         buf.skipBytes(garbageLen);
         return garbageLen;
     }

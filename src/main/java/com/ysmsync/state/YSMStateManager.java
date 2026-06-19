@@ -398,8 +398,9 @@ public class YSMStateManager {
         if (state == null || state.getSyncStep() != 2) return;
 
         try {
-            byte[] decrypted = YsmCrypt.decrypt(rawData, state.getClientNextKey());
-            if (decrypted == null) return;
+            // 客户端用 key1 加密 Packet 04（与 Fox Model Loader 一致）
+            byte[] decrypted = YsmCrypt.decrypt(rawData, state.getKey1());
+            if (decrypted == null || decrypted.length < 3) return;
 
             try (YSMByteBuf buf = new YSMByteBuf(Unpooled.wrappedBuffer(decrypted))) {
                 buf.skipGarbageHeader();
