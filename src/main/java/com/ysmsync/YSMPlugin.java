@@ -7,7 +7,11 @@ import com.ysmsync.packet.YSMPacketHandler;
 import com.ysmsync.state.PlayerYSMState;
 import com.ysmsync.state.YSMStateManager;
 import com.ysmsync.storage.YSMStorage;
+import com.ysmsync.update.UpdateChecker;
 import org.bukkit.Bukkit;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -24,15 +28,17 @@ import org.bukkit.plugin.java.JavaPlugin;
  * 3. 广播 S2C 数据包给所有已握手的在线玩家
  * 4. 持久化存储玩家模型选择
  */
-public class YSMPlugin extends JavaPlugin implements Listener {
+public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
     private YSMStorage storage;
     private YSMStateManager stateManager;
     private YSMPacketHandler packetHandler;
     private ModelFileManager modelFileManager;
     private ModelUploadManager uploadManager;
+    private UpdateChecker updateChecker;
     private String ysmChannel;
     private boolean debug;
+    private boolean checkUpdate;
 
     @Override
     public void onEnable() {
@@ -59,6 +65,9 @@ public class YSMPlugin extends JavaPlugin implements Listener {
         // 注册事件监听
         getServer().getPluginManager().registerEvents(this, this);
 
+        // 注册命令
+        getCommand("ysmsync").setExecutor(this);
+
         // 注册 YSM 频道
         getServer().getMessenger().registerIncomingPluginChannel(this, ysmChannel, (channel, player, message) -> {
             handlePluginMessage(player, message);
@@ -66,6 +75,24 @@ public class YSMPlugin extends JavaPlugin implements Listener {
         getServer().getMessenger().registerOutgoingPluginChannel(this, ysmChannel);
 
         getLogger().info("YSMSync enabled. Channel: " + ysmChannel);
+
+        // 检查更新
+        if (checkUpdate) {
+            updateChecker = new UpdateChecker(this);
+            updateChecker.check().thenAccept(result -> {
+                if (result.error() != null) {
+                    logDebug("Update check failed: " + result.error());
+                    return;
+                }
+                if (result.hasUpdate()) {
+                    getLogger().warning("New version available: " + result.latestVersion()
+                            + " (current: " + getDescription().getVersion() + ")");
+                    getLogger().warning("Download: https://github.com/SSChen09/YSMSync/releases/latest");
+                } else {
+                    logDebug("You are running the latest version.");
+                }
+            });
+        }
     }
 
     @Override
@@ -85,6 +112,7 @@ public class YSMPlugin extends JavaPlugin implements Listener {
     private void loadConfig() {
         ysmChannel = getConfig().getString("channel", "yes_steve_model:2_6_0");
         debug = getConfig().getBoolean("debug", false);
+        checkUpdate = getConfig().getBoolean("check-update", true);
     }
 
     /**
@@ -138,6 +166,43 @@ public class YSMPlugin extends JavaPlugin implements Listener {
     public YSMStateManager getStateManager() { return stateManager; }
     public YSMPacketHandler getPacketHandler() { return packetHandler; }
     public String getYsmChannel() { return ysmChannel; }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!command.getName().equalsIgnoreCase("ysmsync")) return false;
+
+        if (args.length == 0 || args[0].equalsIgnoreCase("update")) {
+            if (updateChecker == null) {
+                updateChecker = new UpdateChecker(this);
+            }
+            sender.sendMessage("[YSMSync] Checking for updates...");
+            updateChecker.check().thenAccept(result -> {
+                if (result.error() != null) {
+                    sender.sendMessage("[YSMSync] Update check failed: " + result.error());
+                    return;
+                }
+                String current = getDescription().getVersion();
+                if (result.hasUpdate()) {
+                    sender.sendMessage("[YSMSync] New version available: " + result.latestVersion()
+                            + " (current: " + current + ")");
+                    sender.sendMessage("[YSMSync] Download: https://github.com/SSChen09/YSMSync/releases/latest");
+                } else {
+                    sender.sendMessage("[YSMSync] You are running the latest version (" + current + ").");
+                }
+            });
+            return true;
+        }
+
+        if (args[0].equalsIgnoreCase("reload")) {
+            reloadConfig();
+            loadConfig();
+            sender.sendMessage("[YSMSync] Configuration reloaded.");
+            return true;
+        }
+
+        sender.sendMessage("[YSMSync] Usage: /ysmsync [update|reload]");
+        return true;
+    }
 
     public void logDebug(String message) {
         if (debug) {

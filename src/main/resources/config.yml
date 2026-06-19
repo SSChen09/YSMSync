@@ -23,3 +23,6 @@ upload:
 
 # Debug logging
 debug: false
+
+# Check for updates on startup
+check-update: true

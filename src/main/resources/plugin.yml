@@ -4,3 +4,14 @@ main: com.ysmsync.YSMPlugin
 api-version: '1.21'
 description: Yes Steve Model packet sync for Paper servers
 authors: [YSMSync]
+
+commands:
+  ysmsync:
+    description: YSMSync admin commands
+    usage: /ysmsync [update|reload]
+    permission: ysmsync.admin
+
+permissions:
+  ysmsync.admin:
+    description: Allows using YSMSync admin commands
+    default: op
