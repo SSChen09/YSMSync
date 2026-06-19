@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.github.johnrengelman.shadow") version "8.3.6"
+    id("com.gradleup.shadow") version "8.3.6"
 }
 
 group = "com.ysmsync"
