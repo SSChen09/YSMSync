@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.ysmsync"
-version = "2.0.1"
+version = "2.0.2"
 
 repositories {
     mavenCentral()
@@ -34,6 +34,3 @@ tasks.shadowJar {
     archiveBaseName.set("YSMSync")
     relocate("com.github.luben.zstd", "com.ysmsync.lib.zstd")
 }
-
-// shadowJar 替代 jar 作为主产物，禁用 jar 避免冲突
-tasks.jar { enabled = false }
