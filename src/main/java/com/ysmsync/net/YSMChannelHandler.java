@@ -99,29 +99,16 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
                     buf.release(); // 已处理，释放 ByteBuf
                     return;
                 }
-                // 不是 YSM 频道，回退让 decoder 处理
-                return;
-            }
-
-            // 路径2: YSM 客户端直接发送自定义 packetId
-            // Fabric/NeoForge 的 YSM mod 使用自定义网络通道，直接发送带有协议 ID 的原始包
-            // 仅匹配已知的 YSM 协议 ID，避免误捕获原版数据包
-            if (packetId >= 1 && packetId <= 52 || (packetId >= 70 && packetId <= 74)) {
-                // 提取完整数据（包含 packetId）
-                byte[] data = new byte[buf.readableBytes() + varIntSize(packetId)];
-                buf.getBytes(readerIndex, data);
-
-                buf.release(); // 释放原始 ByteBuf
-                dispatchToPlugin(ctx, data);
-                return;
+                // 不是 YSM 频道，不 return，让 finally 恢复 reader index 后交给 PacketDecoder
             }
 
         } catch (Exception e) {
             // 解析失败，回退让 decoder 处理
         } finally {
-            // 无论是否命中 YSM 路径，都恢复 reader index
-            // 确保 PacketDecoder 从正确位置开始读取
-            buf.readerIndex(readerIndex);
+            // 仅在 buffer 未被释放时恢复 reader index
+            if (buf.refCnt() > 0) {
+                buf.readerIndex(readerIndex);
+            }
         }
 
         // 不是 YSM 包，传递给后方的 PacketDecoder
@@ -181,6 +168,10 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
 
     private String readString(ByteBuf buf) {
         int len = readVarInt(buf);
+        if (len < 0 || len > buf.readableBytes()) {
+            throw new IllegalArgumentException(
+                    "String length " + len + " exceeds readable bytes " + buf.readableBytes());
+        }
         byte[] bytes = new byte[len];
         buf.readBytes(bytes);
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);

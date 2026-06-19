@@ -67,8 +67,6 @@ public class YSMPacketHandler {
             ByteBuffer buf = ByteBuffer.wrap(data);
             int packetId = VarIntUtil.readVarInt(buf);
 
-            plugin.logDebug("C2S packet from " + player.getName() + ": id=" + packetId + " len=" + data.length);
-
             switch (packetId) {
                 case C2S_VERSION_CHECK -> handleVersionCheck(player, buf);
                 case C2S_MODEL_SYNC -> handleModelSync(player, buf, data);

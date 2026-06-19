@@ -85,6 +85,10 @@ public final class VarIntUtil {
 
     public static String readString(ByteBuffer buf) {
         int length = readVarInt(buf);
+        if (length < 0 || length > buf.remaining()) {
+            throw new IllegalArgumentException(
+                    "String length " + length + " exceeds remaining bytes " + buf.remaining());
+        }
         byte[] bytes = new byte[length];
         buf.get(bytes);
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
@@ -98,6 +102,10 @@ public final class VarIntUtil {
 
     public static int[] readVarIntArray(ByteBuffer buf) {
         int length = readVarInt(buf);
+        if (length < 0 || length > buf.remaining()) {
+            throw new IllegalArgumentException(
+                    "VarInt array length " + length + " exceeds remaining bytes " + buf.remaining());
+        }
         int[] result = new int[length];
         for (int i = 0; i < length; i++) {
             result[i] = readVarInt(buf);

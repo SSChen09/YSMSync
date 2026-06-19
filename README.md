@@ -8,15 +8,16 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.5.1
+- **修复 AuthMe 兼容** — 移除误拦截原版数据包的路径，解决与 AuthMe 等登录插件冲突的问题
+- **修复 ByteBuf 释放后访问** — `finally` 块不再访问已释放的 Netty ByteBuf
+- **数据包边界检查** — `readString` / `readVarIntArray` 增加长度校验，防止畸形包导致崩溃
+
 ### v1.5.0
 - **自动更新** — 新增 `auto-update` 配置项，开启后启动时自动下载最新版本；`/ysmsync update` 命令现在会自动下载而非仅提示
 
 ### v1.4.0
 - **启动时检查更新** — 插件启动时异步检查 GitHub 是否有新版本，有则输出警告日志
-
-### v1.3.1
-- **修复 DecoderException** — 修复 Netty 拦截器未正确恢复 ByteBuf reader index 导致原版数据包解码失败的问题
-- **修复 Paper 26.1.2 兼容** — 适配 `ServerPlayer.connection` 字段类型变化，修正 Netty Channel 反射链
 
 ## 功能
 
@@ -156,10 +157,10 @@ cd YSMSync
 
 本项目的实现思路和协议解析参考了以下项目：
 
-- [OpenYSM](https://github.com/OpenYSM/OpenYSM) — YSM 协议定义与客户端模组实现
 - [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) — 基于 OpenYSM 的 Fabric/NeoForge 客户端模组，提供了协议细节参考
-- [Freesia II](https://github.com/FreesiaTeam/Freesia) — 跨服模型同步架构设计，其实体 ID 映射与分层同步思路对本项目的 Netty 拦截方案有重要启发
+- [Freesia II](https://github.com/NguyenDevs/FreesiaII) — 跨服模型同步架构设计，其实体 ID 映射与分层同步思路对本项目的 Netty 拦截方案有重要启发
 - [Yes Steve Model](https://modrinth.com/mod/yes-steve-model) — 纯正的原版 YSM 模组
+- [OpenYSM](https://github.com/OpenYSM/OpenYSM) — 开源的 YSM 提供了协议定义与（向开源组致敬）
 
 ## 许可证
 
@@ -169,4 +170,4 @@ MIT License
 
 ### **你YSM什么时候能开源**
 
-![YSM制作组未来计划通讯](https://static.wikitide.net/nmfwikiwiki/f/f9/YSM%E5%88%B6%E4%BD%9C%E7%BB%84%E6%9C%AA%E6%9D%A5%E8%AE%A1%E5%88%92%E9%80%9A%E8%AE%AF.png)
+![YSM制作组未来计划通讯](https://static.wikitide.net/nmfwikiwiki/f/f9/YSM%E5%88%B6%E4%BD%9C%E7%BB%84%E6%9C%AA%E6%9D%A5%E8%AE%A1%E5%88%92%E9%80%9A%E8%AE%AF.png) 
