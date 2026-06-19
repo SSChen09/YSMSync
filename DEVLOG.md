@@ -384,6 +384,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.6.7 | `Size mismatch: expected X got Y` 上传数据不完整 | handleUploadChunk 读取 writeByteArray 的 VarInt 长度前缀 |
 | v1.6.7 | 上传成功但 models/ 目录无文件 | 新增 storeRawModelData，原始 .ysm 数据直接包装为 S2C 格式存储 |
 | v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}，自动迁移旧格式 |
-| v2.0.0 | 客户端每次重连重复上传模型 | Packet 03 填充 hash1/hash2，客户端缓存命中跳过下载 |
-| v2.0.0 | 缺少 Zstd 压缩支持 | 引入 zstd-jni，shadow 插件 shade 到 JAR |
+| v2.0.0 | 客户端每次重连重复上传模型 | Packet 03 填充 hash1/hash2，客户端缓存命中跳过下载；引入 zstd-jni 实现 YSM Zstd 压缩 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |
