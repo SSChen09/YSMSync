@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用问题
+    url: https://github.com/SSChen09/YSMSync/discussions
+    about: 使用相关的问题请先到 Discussions 讨论
+  - name: 模组主页
+    url: https://modrinth.com/mod/yes-steve-model
+    about: Yes Steve Model 模组相关问题请到模组主页反馈

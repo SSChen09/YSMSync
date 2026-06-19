@@ -1,0 +1,148 @@
+name: Bug 报告
+description: 报告 YSMSync 插件的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你提交 Bug 报告！请尽量填写以下信息，以便更快定位问题。
+
+        > **注意：** Bug 反馈暂时仅接受以下环境的反馈，其他环境的问题可能暂时无法处理。
+        >
+        > - **客户端：** Fabric 26.1.2 + Fox Model Loader
+        > - **服务端：** Paper 1.21.4+ 或基于 Paper 开发的其他分支端
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 清晰地描述你遇到了什么问题
+      placeholder: 例如：玩家加入服务器后，其他客户端看不到该玩家的模型
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 描述如何复现此问题
+      placeholder: |
+        1. 客户端安装 YSM 模组并选择一个模型
+        2. 加入服务器
+        3. 观察其他玩家的视角
+        4. 看到模型未同步
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你期望发生什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: YSMSync 版本
+      description: "在控制台输入 `/ysmsync` 或查看插件列表获取版本号"
+      placeholder: 例如：1.7.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: server-software
+    attributes:
+      label: 服务端软件
+      description: 你使用的服务端是什么
+      options:
+        - Paper
+        - Purpur
+        - Folia
+        - Pufferfish
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: 服务端版本
+      description: 服务端的 Minecraft 版本
+      placeholder: 例如：1.21.4
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java 版本
+      description: 服务端使用的 Java 版本
+      placeholder: 例如：21.0.3
+    validations:
+      required: true
+
+  - type: input
+    id: client-mod
+    attributes:
+      label: 客户端模组
+      description: 客户端使用的模型加载模组及版本
+      placeholder: 例如：Yes Steve Model 1.4.0 / Fox Model Loader 0.3.0
+    validations:
+      required: true
+
+  - type: input
+    id: client-version
+    attributes:
+      label: 客户端 Minecraft 版本
+      description: 客户端的 Minecraft 版本
+      placeholder: 例如：1.21.4
+    validations:
+      required: false
+
+  - type: textarea
+    id: via-version
+    attributes:
+      label: ViaVersion 信息
+      description: 如果使用了 ViaVersion 或其他协议转换插件，请提供版本
+      placeholder: 例如：ViaVersion 5.3.2
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: config.yml 配置
+      description: 贴出你的 `plugins/YSMSync/config.yml` 内容（敏感信息可打码）
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 错误信息
+      description: |
+        请粘贴相关的控制台日志或错误堆栈。
+        推荐使用 [GitHub Gist](https://gist.github.com) 或 [mclo.gs](https://mclo.gs) 上传完整日志。
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 其他你认为有助于排查问题的信息（截图、服务端插件列表等）
+    validations:
+      required: false
