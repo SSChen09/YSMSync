@@ -31,14 +31,11 @@ tasks.processResources {
 
 tasks.shadowJar {
     archiveClassifier.set("")
+    archiveBaseName.set("YSMSync")
     relocate("com.github.luben.zstd", "com.ysmsync.lib.zstd")
 }
 
 tasks.jar {
     archiveClassifier.set("slim")
-    archiveFileName.set("YSMSync-${version}-slim.jar")
-}
-
-tasks.build {
-    dependsOn(tasks.shadowJar)
+    archiveBaseName.set("YSMSync")
 }

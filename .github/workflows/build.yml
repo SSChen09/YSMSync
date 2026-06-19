@@ -54,7 +54,7 @@ jobs:
 
       - name: Build with Gradle
         if: steps.check.outputs.skip == 'false'
-        run: ./gradlew build
+        run: ./gradlew shadowJar
 
       - name: Upload artifact
         if: steps.check.outputs.skip == 'false'
