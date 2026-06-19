@@ -396,21 +396,23 @@ public class YSMStateManager {
                 YsmCrypt.EncryptedPacket result = YsmCrypt.encrypt(outBuf.toArray(), state.getClientNextKey(), false);
                 sendModelSyncPayload(player, result.data());
 
-                // 在发送模型目录后立即完成握手。
-                // 客户端在所有模型缓存命中时不会发送 Packet 04，
-                // 因此不能依赖 handleRequestModel 来标记握手完成。
-                state.setSyncStep(3);
-                state.setHandshakeCompleted(true);
+                // 如果客户端所有模型都缓存命中，不会发送 Packet 04，
+                // 因此设置延迟任务兜底完成握手（5秒超时）。
+                final UUID playerUuid = player.getUniqueId();
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    PlayerYSMState s = get(playerUuid);
+                    if (s != null && !s.isHandshakeCompleted()) {
+                        s.setSyncStep(3);
+                        s.setHandshakeCompleted(true);
 
-                // 向该玩家同步所有其他玩家的模型
-                syncAllModelsToJoiningPlayer(player);
-                // 向所有其他玩家发送该玩家的模型
-                Player p = Bukkit.getPlayer(player.getUniqueId());
-                if (p != null) {
-                    broadcastModelToAllPlayers(p);
-                }
-
-                plugin.logDebug("Handshake completed for " + player.getName() + " (after Packet03)");
+                        Player p = Bukkit.getPlayer(playerUuid);
+                        if (p != null) {
+                            syncAllModelsToJoiningPlayer(p);
+                            broadcastModelToAllPlayers(p);
+                        }
+                        plugin.logDebug("Handshake completed for " + player.getName() + " (fallback timeout)");
+                    }
+                }, 100L); // 5 秒超时（20 tick/秒 × 5 = 100 tick）
             }
         } catch (Exception e) {
             plugin.getLogger().log(java.util.logging.Level.WARNING, "Failed to send Packet03 to " + player.getName(), e);
@@ -489,8 +491,7 @@ public class YSMStateManager {
      */
     public void handleRequestModel(Player player, byte[] rawData) {
         PlayerYSMState state = get(player.getUniqueId());
-        // 握手已在 sendPacket03 中完成，此处只处理模型数据请求
-        if (state == null || state.getSyncStep() < 2) return;
+        if (state == null || state.getSyncStep() != 2) return;
 
         try {
             // 客户端用 key1 加密 Packet 04（与 Fox Model Loader 一致）
@@ -516,6 +517,20 @@ public class YSMStateManager {
             if (!requestedHashes.isEmpty()) {
                 sendPacket05(player, state, requestedHashes);
             }
+
+            // 握手完成
+            state.setSyncStep(3);
+            state.setHandshakeCompleted(true);
+
+            // 向该玩家同步所有其他玩家的模型
+            syncAllModelsToJoiningPlayer(player);
+            // 向所有其他玩家发送该玩家的模型
+            Player otherPlayer = Bukkit.getPlayer(player.getUniqueId());
+            if (otherPlayer != null) {
+                broadcastModelToAllPlayers(otherPlayer);
+            }
+
+            plugin.logDebug("Handshake completed for " + player.getName());
         } catch (Exception e) {
             plugin.getLogger().log(java.util.logging.Level.WARNING, "Failed to handle RequestModel from " + player.getName(), e);
         }

@@ -260,6 +260,14 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **修复：** `YSMPacketHandler.handleIncoming` 中 Packet 04 的处理条件从 `syncStep == 2` 改为 `syncStep >= 2`，允许在握手已完成状态下仍处理模型数据请求。
 
+### v2.0.7 — 修复模型同步完全失败
+
+**问题：** v2.0.6 将 Packet 04 处理条件改为 `syncStep >= 2`，导致 syncStep=2 时收到的 Packet 02（HandshakePong）被错误路由到 `handleRequestModel`（尝试用 key1 解密 HandshakePong 数据），握手直接失败。
+
+**根因：** Packet 02 和 Packet 04 都走 C2SModelSyncPayload 通道（packetId=2），服务端通过 syncStep 区分。`syncStep >= 2` 无法区分 syncStep=2 时的 HandshakePong 和 syncStep=3 时的 RequestModel。
+
+**修复：** 恢复 `syncStep == 2` 条件。`sendPacket03` 不再立即设置 syncStep=3，改为在发送 Packet 03 后注册 5 秒延迟任务作为兜底：如果客户端未发送 Packet 04（所有模型缓存命中），延迟任务自动完成握手；如果客户端发送了 Packet 04，`handleRequestModel` 正常处理并完成握手（延迟任务检测到已完成后跳过）。
+
 ---
 
 ## 项目结构

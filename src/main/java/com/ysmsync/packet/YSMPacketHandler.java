@@ -79,9 +79,8 @@ public class YSMPacketHandler {
                     buf.get(remaining);
                     stateManager.handleHandshakePong(player, remaining);
                     return true;
-                } else if (syncStep >= 2 && packetId == C2S_MODEL_SYNC) {
-                    // syncStep==2: 等待 RequestModel (Packet 04)
-                    // syncStep==3: 握手已完成，但客户端仍可能发送 Packet 04 请求缺失模型
+                } else if (syncStep == 2 && packetId == C2S_MODEL_SYNC) {
+                    // 等待 RequestModel (Packet 04)
                     byte[] remaining = new byte[buf.remaining()];
                     buf.get(remaining);
                     stateManager.handleRequestModel(player, remaining);
