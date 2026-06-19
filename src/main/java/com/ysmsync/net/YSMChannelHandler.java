@@ -11,7 +11,9 @@ import org.bukkit.entity.Player;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -27,6 +29,10 @@ import java.util.logging.Level;
 public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
 
     private static final String HANDLER_NAME = "ysmsync_handler";
+
+    /** 已知的 serverbound CustomPayload packet ID（不同 MC 版本不同） */
+    private static final Set<Integer> CUSTOM_PAYLOAD_IDS = new HashSet<>();
+    private static int resolvedCustomPayloadId = -1;
 
     private static Method getHandleMethod;
     private static Method getConnectionMethod;
@@ -93,8 +99,8 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
         try {
             int packetId = readVarInt(buf);
 
-            // 路径1: Minecraft CustomPayload serverbound packet ID = 0x17 (23)
-            if (packetId == 0x17) {
+            // 检查是否是 CustomPayload serverbound packet（不同 MC 版本 ID 不同）
+            if (packetId == resolvedCustomPayloadId || CUSTOM_PAYLOAD_IDS.contains(packetId)) {
                 if (handleCustomPayload(ctx, buf)) {
                     buf.release(); // 已处理，释放 ByteBuf
                     return;
@@ -247,6 +253,49 @@ public class YSMChannelHandler extends ChannelInboundHandlerAdapter {
         channelField = connectionClass.getDeclaredField("channel");
         channelField.setAccessible(true);
 
+        // 通过 NMS 反射获取 CustomPayload serverbound packet ID
+        initCustomPayloadPacketId();
+
         reflectionsInitialized = true;
+    }
+
+    /**
+     * 通过 NMS 反射获取 ServerboundCustomPayloadPacket 的 packet ID。
+     * 不同 MC 版本的 ID 不同（1.20-1.20.1: 0x18, 1.20.2+: 0x17）。
+     */
+    private static void initCustomPayloadPacketId() {
+        // 已知版本的默认值
+        CUSTOM_PAYLOAD_IDS.add(0x17); // MC 1.20.2+
+        CUSTOM_PAYLOAD_IDS.add(0x18); // MC 1.20-1.20.1
+
+        try {
+            Class<?> payloadPacketClass = Class.forName("net.minecraft.network.protocol.game.ServerboundCustomPayloadPacket");
+            // 尝试通过 PacketType.TYPE 字段获取 packet ID
+            try {
+                Field typeField = payloadPacketClass.getDeclaredField("TYPE");
+                typeField.setAccessible(true);
+                Object packetType = typeField.get(null);
+                // PacketType.id() 返回 packet ID
+                Method idMethod = packetType.getClass().getMethod("id");
+                resolvedCustomPayloadId = (int) idMethod.invoke(packetType);
+            } catch (Exception e) {
+                // 回退：尝试通过 static int 字段获取
+                try {
+                    for (Field f : payloadPacketClass.getDeclaredFields()) {
+                        if (f.getType() == int.class && java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                            String name = f.getName().toLowerCase();
+                            if (name.contains("id") || name.contains("packet")) {
+                                f.setAccessible(true);
+                                int id = f.getInt(null);
+                                if (id > 0 && id < 256) {
+                                    resolvedCustomPayloadId = id;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
     }
 }

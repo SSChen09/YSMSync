@@ -65,6 +65,39 @@ public class YSMPacketHandler {
 
         try {
             ByteBuffer buf = ByteBuffer.wrap(data);
+
+            // 检查是否是加密握手包（通过 syncStep 判断）
+            PlayerYSMState state = stateManager.get(player.getUniqueId());
+            if (state != null) {
+                int syncStep = state.getSyncStep();
+                if (syncStep == 1) {
+                    // 等待 HandshakePong (Packet 02)
+                    // data 是原始加密数据（无 discriminator 前缀，因为 Paper 的 CustomPayload 直接给 raw bytes）
+                    // 但实际上客户端发送的 C2SModelSyncPayload 包含 discriminator=2
+                    // 我们需要跳过 discriminator 字节
+                    if (data.length > 1 && (data[0] & 0xFF) == C2S_MODEL_SYNC) {
+                        byte[] encryptedPayload = new byte[data.length - 1];
+                        System.arraycopy(data, 1, encryptedPayload, 0, encryptedPayload.length);
+                        stateManager.handleHandshakePong(player, encryptedPayload);
+                        return true;
+                    }
+                    // 如果没有 discriminator 前缀，直接尝试解密
+                    stateManager.handleHandshakePong(player, data);
+                    return true;
+                } else if (syncStep == 2) {
+                    // 等待 RequestModel (Packet 04)
+                    if (data.length > 1 && (data[0] & 0xFF) == C2S_MODEL_SYNC) {
+                        byte[] encryptedPayload = new byte[data.length - 1];
+                        System.arraycopy(data, 1, encryptedPayload, 0, encryptedPayload.length);
+                        stateManager.handleRequestModel(player, encryptedPayload);
+                        return true;
+                    }
+                    stateManager.handleRequestModel(player, data);
+                    return true;
+                }
+            }
+
+            // 正常数据包处理（读取 VarInt discriminator）
             int packetId = VarIntUtil.readVarInt(buf);
 
             switch (packetId) {
@@ -98,30 +131,10 @@ public class YSMPacketHandler {
         plugin.logDebug("Version check from " + player.getName() + ": " + clientVersion);
 
         PlayerYSMState state = stateManager.getOrCreate(player.getUniqueId());
-        state.setHandshakeCompleted(true);
         state.setYsmVersion(clientVersion);
 
-        // 发送握手响应
-        String version = plugin.getConfig().getString("protocol-version", "2.6.0");
-        String brand = plugin.getConfig().getString("brand", "open_ysm:v1");
-        boolean allowUpload = plugin.getConfig().getBoolean("allow-upload", false);
-
-        byte[] versionPacket = stateManager.buildVersionCheckPacket(version, brand, allowUpload);
-        stateManager.sendYSMPayload(player, versionPacket);
-
-        // 发送授权模型列表（空）
-        stateManager.sendYSMPayload(player, stateManager.buildSyncAuthModelsPacket());
-
-        // 发送收藏模型列表（空）
-        stateManager.sendYSMPayload(player, stateManager.buildSyncStarModelsPacket());
-
-        // 向该玩家同步所有其他玩家的模型
-        stateManager.syncAllModelsToJoiningPlayer(player);
-
-        // 向所有其他玩家发送该玩家的模型（如果有）
-        stateManager.broadcastModelToAllPlayers(player);
-
-        plugin.logDebug("Handshake completed for " + player.getName());
+        // 版本检查完成后，启动加密握手（而非直接完成握手）
+        stateManager.initiateHandshake(player);
     }
 
     /**
@@ -131,10 +144,13 @@ public class YSMPacketHandler {
      */
     private void handleModelSync(Player player, ByteBuffer buf, byte[] rawData) {
         plugin.logDebug("Model sync from " + player.getName() + " (" + rawData.length + " bytes)");
-        // 存储模型数据到服务端
+        // 存储模型数据到服务端（内部会将 C2S 格式转换为 S2C 格式）
         modelFileManager.storeModelData(player.getUniqueId(), rawData);
-        // 广播原始数据给当前在线的其他玩家
-        stateManager.relayRawPacket(player, rawData);
+        // 获取 S2C 格式的数据并广播给其他在线玩家
+        byte[] s2cData = modelFileManager.getModelData(player.getUniqueId());
+        if (s2cData != null) {
+            stateManager.relayRawPacket(player, s2cData);
+        }
     }
 
     /**
@@ -227,20 +243,23 @@ public class YSMPacketHandler {
      * 客户端反馈动画执行结果。缓存实体状态数据并广播。
      */
     private void handleCompleteFeedback(Player player, ByteBuffer buf) {
-        // entityId: int, flags: VarInt, 然后是 string->float map
         int entityId = buf.getInt();
         int flags = VarIntUtil.readVarInt(buf);
         int mapSize = buf.get() & 0xFF;
 
-        // 缓存完整的实体状态原始数据
-        // 重建为 S2CSyncPlayerState 格式广播
-        ByteBuffer out = ByteBuffer.allocate(1024);
+        // 读取完整的 map 数据（string -> float pairs）并转发
+        ByteBuffer out = ByteBuffer.allocate(4096);
         VarIntUtil.writeVarInt(out, S2C_SYNC_PLAYER_STATE);
         VarIntUtil.writeVarInt(out, player.getEntityId());
-        // flags: bit 12 = molang
-        out.putShort((short) (flags | 0x1000)); // 确保 molang bit 设置
-        out.putInt(entityId); // 作为 state data 的一部分
-        // 简化：直接转发原始 feedback 数据作为 player state
+        out.putShort((short) (flags | 0x1000));
+        out.putInt(entityId);
+        out.put((byte) mapSize);
+        for (int i = 0; i < mapSize; i++) {
+            String key = VarIntUtil.readString(buf);
+            float value = buf.getFloat();
+            VarIntUtil.writeString(out, key);
+            out.putFloat(value);
+        }
         out.flip();
         byte[] result = new byte[out.remaining()];
         out.get(result);

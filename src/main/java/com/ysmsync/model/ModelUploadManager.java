@@ -53,6 +53,7 @@ public class ModelUploadManager {
         public final int totalBytes;
         public final String expectedSha256;
         public final ByteArrayOutputStream buffer;
+        public final long createdAt;
         public int receivedBytes;
         public boolean finished;
 
@@ -65,6 +66,7 @@ public class ModelUploadManager {
             this.buffer = new ByteArrayOutputStream(totalBytes);
             this.receivedBytes = 0;
             this.finished = false;
+            this.createdAt = System.currentTimeMillis();
         }
     }
 
@@ -189,13 +191,18 @@ public class ModelUploadManager {
     }
 
     /**
-     * 清理超时会话（5分钟）。
+     * 清理超时会话（5分钟）和已完成会话。
      */
     public void cleanupSessions() {
+        long now = System.currentTimeMillis();
+        long timeoutMs = 5 * 60 * 1000L;
         sessions.entrySet().removeIf(entry -> {
             UploadSession session = entry.getValue();
             if (session.finished) return true;
-            // 简单超时：如果 receivedBytes == 0 且会话存在超过 5 分钟
+            if (now - session.createdAt > timeoutMs) {
+                plugin.logDebug("Upload session timed out: id=" + session.uploadId);
+                return true;
+            }
             return false;
         });
     }

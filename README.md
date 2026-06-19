@@ -8,16 +8,21 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.6.1
+- **修复握手解密密钥错误** — `handleRequestModel` 错误使用 `key1` 解密 Packet 04，改为正确的 `clientNextKey`，修复握手永远无法完成的问题
+- **修复模型实时同步格式** — `relayRawPacket` 广播 C2S 格式数据导致其他客户端无法识别，改为广播已转换的 S2C 格式
+- **CustomPayload packet ID 动态获取** — 通过 NMS 反射自动发现 packet ID，兼容不同 MC 版本（1.20-1.20.1 使用 0x18，1.20.2+ 使用 0x17）
+- **安全与健壮性** — `ServerKeyManager` / `PlayerYSMState` 的 `byte[]` getter 防御性克隆；`VarInt` 溢出检查收紧至 35 位；`CityHash` 复用为单例；上传会话 5 分钟超时自动清理
+
+### v1.6.0
+- **加密握手协议** — 移植 OpenYSM 加密握手（Packet 01-05），修复客户端卡在"正在校验"的问题
+- **ServerKey 持久化** — 服务端密钥自动生成并持久化，重启后保持兼容
+- **GitHub 下载加速** — 下载超时自动回退 gh-proxy.org 镜像加速
+
 ### v1.5.1
 - **修复 AuthMe 兼容** — 移除误拦截原版数据包的路径，解决与 AuthMe 等登录插件冲突的问题
 - **修复 ByteBuf 释放后访问** — `finally` 块不再访问已释放的 Netty ByteBuf
 - **数据包边界检查** — `readString` / `readVarIntArray` 增加长度校验，防止畸形包导致崩溃
-
-### v1.5.0
-- **自动更新** — 新增 `auto-update` 配置项，开启后启动时自动下载最新版本；`/ysmsync update` 命令现在会自动下载而非仅提示
-
-### v1.4.0
-- **启动时检查更新** — 插件启动时异步检查 GitHub 是否有新版本，有则输出警告日志
 
 ## 功能
 
@@ -80,9 +85,10 @@ auto-update: false
 
 1. 玩家加入时，插件通过 Netty Pipeline 拦截 YSM 自定义频道数据包
 2. 发送版本检查包触发客户端握手
-3. 握手完成后，同步所有已存储的模型给新玩家
-4. 玩家切换模型时，广播切换信息给其他玩家
-5. 模型文件存储在 `plugins/YSMSync/models/` 目录（按玩家 UUID 命名）
+3. 版本检查通过后，启动加密握手流程（Packet 01-05），完成密钥交换
+4. 握手完成后，同步所有已存储的模型给新玩家
+5. 玩家切换模型时，广播切换信息给其他玩家
+6. 模型文件存储在 `plugins/YSMSync/models/` 目录（按玩家 UUID 命名）
 
 ## 协议支持
 
@@ -119,10 +125,18 @@ auto-update: false
 YSMSync/
 ├── src/main/java/com/ysmsync/
 │   ├── YSMPlugin.java              # 主插件入口
+│   ├── crypto/
+│   │   ├── ChaCha20Base.java       # ChaCha20 流密码基类
+│   │   ├── CityHash.java           # CityHash64 哈希算法
+│   │   ├── MT19937.java            # Mersenne Twister 伪随机数
+│   │   ├── ServerKeyManager.java   # 服务端密钥管理
+│   │   ├── XChaCha20.java          # XChaCha20 流密码
+│   │   └── YsmCrypt.java           # YSM 加密/解密工具
 │   ├── model/
 │   │   ├── ModelFileManager.java   # 模型文件存储管理
 │   │   └── ModelUploadManager.java # 模型上传管理
 │   ├── net/
+│   │   ├── YSMByteBuf.java         # YSM 小端序 ByteBuf 包装器
 │   │   └── YSMChannelHandler.java  # Netty Pipeline 拦截器
 │   ├── packet/
 │   │   └── YSMPacketHandler.java   # 数据包处理分发

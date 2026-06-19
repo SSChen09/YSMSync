@@ -1,5 +1,6 @@
 package com.ysmsync;
 
+import com.ysmsync.crypto.ServerKeyManager;
 import com.ysmsync.model.ModelFileManager;
 import com.ysmsync.model.ModelUploadManager;
 import com.ysmsync.net.YSMChannelHandler;
@@ -19,6 +20,9 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
+import java.nio.file.Files;
+
 /**
  * YSMSync - Paper 服务端 YSM 模型同步插件。
  *
@@ -35,6 +39,7 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
     private YSMPacketHandler packetHandler;
     private ModelFileManager modelFileManager;
     private ModelUploadManager uploadManager;
+    private ServerKeyManager serverKeyManager;
     private UpdateChecker updateChecker;
     private String ysmChannel;
     private boolean debug;
@@ -46,9 +51,16 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
         saveDefaultConfig();
         loadConfig();
 
+        // 应用待处理的更新（从 plugins/update/ 移动到 plugins/）
+        applyPendingUpdate();
+
         // 初始化存储
         storage = new YSMStorage(this);
         storage.open();
+
+        // 初始化服务端密钥管理器
+        serverKeyManager = new ServerKeyManager(this);
+        serverKeyManager.loadOrCreate();
 
         // 初始化模型文件管理器
         modelFileManager = new ModelFileManager(this);
@@ -59,6 +71,7 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
         // 初始化状态管理器
         stateManager = new YSMStateManager(this, storage, modelFileManager);
+        stateManager.setServerKeyManager(serverKeyManager);
 
         // 初始化数据包处理器
         packetHandler = new YSMPacketHandler(this, stateManager, modelFileManager, uploadManager);
@@ -123,10 +136,47 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
     }
 
     /**
+     * 应用待处理的更新。
+     * 检查 plugins/update/ 目录下是否有已下载的新版本 JAR，
+     * 如果有则替换当前运行的 JAR，下次重启生效。
+     */
+    private void applyPendingUpdate() {
+        File updateDir = new File(getDataFolder(), "update");
+        if (!updateDir.exists() || !updateDir.isDirectory()) return;
+
+        File[] jars = updateDir.listFiles((dir, name) -> name.endsWith(".jar"));
+        if (jars == null || jars.length == 0) return;
+
+        File pluginsDir = getDataFolder().getParentFile();
+
+        for (File jar : jars) {
+            try {
+                File target = new File(pluginsDir, jar.getName());
+                Files.move(jar.toPath(), target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                getLogger().info("Applied update: " + jar.getName() + " (restart to activate)");
+            } catch (Exception e) {
+                getLogger().log(java.util.logging.Level.WARNING,
+                        "Failed to apply update: " + jar.getName(), e);
+            }
+        }
+    }
+
+    /**
+     * 获取更新下载目录（plugins/update/）。
+     */
+    private File getUpdateDir() {
+        File dir = new File(getDataFolder(), "update");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        return dir;
+    }
+
+    /**
      * 处理从客户端收到的插件消息。
      */
     private void handlePluginMessage(Player player, byte[] message) {
-        // 检查是否是 YSM 频道
         packetHandler.handleIncoming(player, message);
     }
 
@@ -182,10 +232,13 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
             if (updateChecker == null) {
                 updateChecker = new UpdateChecker(this);
             }
-            sender.sendMessage("[YSMSync] Checking for updates...");
             updateChecker.check().thenAccept(result -> {
                 if (result.error() != null) {
-                    sender.sendMessage("[YSMSync] Update check failed: " + result.error());
+                    if ("Already checking".equals(result.error())) {
+                        sender.sendMessage("[YSMSync] Update check already in progress...");
+                    } else {
+                        sender.sendMessage("[YSMSync] Update check failed: " + result.error());
+                    }
                     return;
                 }
                 String current = getDescription().getVersion();
@@ -194,9 +247,10 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
                             + " (current: " + current + ")");
                     if (result.downloadUrl() != null) {
                         sender.sendMessage("[YSMSync] Downloading update...");
-                        boolean ok = updateChecker.download(result.downloadUrl(), getFile());
+                        File target = new File(getUpdateDir(), "YSMSync-" + result.latestVersion() + ".jar");
+                        boolean ok = updateChecker.download(result.downloadUrl(), target);
                         if (ok) {
-                            sender.sendMessage("[YSMSync] Update downloaded. Please restart the server to apply.");
+                            sender.sendMessage("[YSMSync] Update downloaded. Restart the server to apply.");
                         } else {
                             sender.sendMessage("[YSMSync] Download failed. Please download manually:");
                             sender.sendMessage("[YSMSync] https://github.com/SSChen09/YSMSync/releases/latest");
@@ -230,13 +284,13 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
     }
 
     /**
-     * 下载更新并提示重启。
-     * 在异步线程中调用，下载完成后在主线程发送日志。
+     * 自动下载更新到 plugins/update/ 目录，重启后生效。
      */
     private void downloadAndApply(String downloadUrl, String newVersion) {
-        boolean ok = updateChecker.download(downloadUrl, getFile());
+        File target = new File(getUpdateDir(), "YSMSync-" + newVersion + ".jar");
+        boolean ok = updateChecker.download(downloadUrl, target);
         if (ok) {
-            getLogger().info("Update to " + newVersion + " downloaded. Please restart the server to apply.");
+            getLogger().info("Update to " + newVersion + " downloaded. Restart the server to apply.");
         } else {
             getLogger().warning("Auto-update download failed. Please download manually:");
             getLogger().warning("https://github.com/SSChen09/YSMSync/releases/latest");
