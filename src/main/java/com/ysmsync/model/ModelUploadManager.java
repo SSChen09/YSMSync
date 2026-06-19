@@ -177,8 +177,8 @@ public class ModelUploadManager {
                     "SHA256 mismatch");
         }
 
-        // 存储模型文件
-        modelFileManager.storeModelData(session.playerUuid, fileData);
+        // 存储模型文件（上传数据是原始 .ysm 文件，需用 storeRawModelData 包装为 S2C 格式）
+        modelFileManager.storeRawModelData(session.playerUuid, fileData);
 
         // 计算哈希值
         long h1 = hash1(fileData);

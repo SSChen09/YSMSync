@@ -84,6 +84,35 @@ public class ModelFileManager {
     }
 
     /**
+     * 存储原始 .ysm 文件数据（上传协议的文件内容，不含 C2S packetId 前缀）。
+     * 自动包装为 S2C 格式（packetId=1 + 原始数据）后存储。
+     */
+    public void storeRawModelData(UUID playerUuid, byte[] rawData) {
+        if (rawData == null || rawData.length == 0) return;
+
+        // 包装为 S2C 格式：packetId=1 + 原始 .ysm 数据
+        ByteBuffer out = ByteBuffer.allocate(5 + rawData.length);
+        VarIntUtil.writeVarInt(out, 1); // S2CModelSyncPayload ID
+        out.put(rawData);
+        out.flip();
+        byte[] s2cData = new byte[out.remaining()];
+        out.get(s2cData);
+
+        playerModelData.put(playerUuid, s2cData);
+
+        // 异步写入磁盘
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                Path file = modelsDir.resolve(playerUuid.toString() + ".ysm");
+                Files.write(file, s2cData);
+                plugin.logDebug("Saved raw model data for " + playerUuid + " (" + s2cData.length + " bytes)");
+            } catch (IOException e) {
+                plugin.getLogger().log(Level.WARNING, "Failed to save raw model data for " + playerUuid, e);
+            }
+        });
+    }
+
+    /**
      * 删除玩家的模型数据。
      */
     public void removeModelData(UUID playerUuid) {

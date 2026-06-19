@@ -8,9 +8,13 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.6.7
+
+- **修复模型上传存储** — 上传完成后的原始 .ysm 数据不含 C2S packetId 前缀，`convertC2S_to_S2C` 匹配失败导致文件未写入磁盘，新增 `storeRawModelData` 直接包装为 S2C 格式存储
+- **修复模型上传分块解析** — `handleUploadChunk` 未读取 `writeByteArray` 的 VarInt 长度前缀，导致每个 chunk 多读 2 字节，累积后最后一个 chunk 因 overflow 被拒绝，上传数据不完整
+
 ### v1.6.6
 
-- **修复模型上传分块解析** — `handleUploadChunk` 未读取 `writeByteArray` 的 VarInt 长度前缀，导致每个 chunk 多读 2 字节，累积后最后一个 chunk 因 overflow 被拒绝，上传数据不完整
 - **修复模型上传分块大小** — `chunk-size` 默认值从 1MB 改为 32KB，与 Fox Model Loader 客户端一致，修复过大的 custom\_payload 包在 ViaVersion 管道中解码失败导致断线
 - **启用上传功能** — `allow-upload` 默认改为 `true`
 - **开启调试日志** — `debug` 默认改为 `true`
