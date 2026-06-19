@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.ysmsync"
-version = "2.0.0"
+version = "2.0.1"
 
 repositories {
     mavenCentral()
@@ -37,4 +37,8 @@ tasks.shadowJar {
 tasks.jar {
     archiveClassifier.set("slim")
     archiveFileName.set("YSMSync-${version}-slim.jar")
+}
+
+tasks.build {
+    dependsOn(tasks.shadowJar)
 }
