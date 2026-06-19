@@ -73,6 +73,101 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **解决方案：** 添加 fallback 逻辑——先尝试 `getMethod("connection")`，失败后改用 `getDeclaredField("connection")` + `setAccessible(true)`。
 
+### v1.5.0 — AuthMe 兼容修复
+
+**问题：** 与 AuthMe 等登录插件冲突，玩家无法正常登录。
+
+**解决方案：** 移除误拦截原版数据包的路径，确保 Netty 拦截器仅处理 `yes_steve_model:*` 频道。
+
+### v1.5.1 — ByteBuf 安全修复
+
+**修复：**
+- `finally` 块不再访问已释放的 Netty ByteBuf，避免 `IllegalReferenceCountException`
+- `readString` / `readVarIntArray` 增加长度校验，防止畸形包导致 OOM
+
+### v1.6.0 — 加密握手协议
+
+**新增功能：**
+- 完整移植 OpenYSM 加密握手协议（Packet 01-05），修复客户端卡在"正在校验"的问题
+- 服务端密钥（ServerKey）自动生成并持久化到 `plugins/YSMSync/server_key.dat`，重启后保持兼容
+- GitHub 下载超时自动回退 `gh-proxy.org` 镜像加速
+
+**加密实现：** `YsmCrypt.java`
+- XChaCha20（30 轮）+ MT19937 XOR + CityHash64 完整性校验
+- Packet 01（HandshakePing）：公钥加密，附带随机 key1
+- Packet 02（HandshakePong）：key1 加密，附带 clientNextKey
+- Packet 03（ModelDirectory）：clientNextKey 加密，发送服务端密钥 + 客户端密钥 + 模型列表
+- Packet 04（RequestModel）：key1 加密，客户端请求缺失模型
+- Packet 05（ModelData）：key1 加密，服务端发送模型文件
+
+### v1.6.1 — 握手与同步修复
+
+**修复：**
+- `handleRequestModel` 解密密钥错误使用 `key1` → 改为 `clientNextKey`（后续在 v1.6.3 中回退）
+- `relayRawPacket` 广播 C2S 格式数据导致其他客户端无法识别 → 改为广播已转换的 S2C 格式
+- CustomPayload packet ID 通过 NMS 反射动态获取，兼容 1.20-1.21+ 不同 MC 版本
+
+**安全与健壮性：**
+- `ServerKeyManager` / `PlayerYSMState` 的 `byte[]` getter 防御性克隆
+- `VarInt` 溢出检查从 64 位收紧至 35 位（Minecraft 标准）
+- `CityHash` 从方法内 `new` 提取为 `static final` 单例
+- 上传会话 5 分钟超时自动清理
+
+### v1.6.2 — CustomPayload 修复
+
+**问题：** 客户端卡在"正在等待 OpenYSM 服务端握手"或"正在上传到服务器"。
+
+**根因与修复：**
+- `handleCustomPayload` 错误读取两个字符串作为频道名（应为单个 ResourceLocation），导致 payload 被截断
+- `handleIncoming` 中 syncStep 检查在 VarInt 读取之前，通过 `data[0]` 检查 discriminator 不可靠 → 重构为先读 VarInt packetId 再路由
+
+### v1.6.3 — Packet 04 解密密钥修复
+
+**问题：** 客户端重启后保留上传状态，服务端报 `Integrity check failed` → `IndexOutOfBoundsException`。
+
+**根因：** v1.6.1 将 `handleRequestModel` 的解密密钥从 `key1` 改为 `clientNextKey`，但 Fox Model Loader 客户端确认 **Packet 04 使用 `key1` 加密**（与 Packet 05 相同）。用错误密钥解密产生垃圾数据。
+
+**修复：**
+- `handleRequestModel` 解密密钥改回 `state.getKey1()`
+- `skipGarbageHeader` 增加边界检查，垃圾头部长度超限时抛出明确异常
+
+**密钥流转（最终版）：**
+
+| 包 | 方向 | 加/解密密钥 |
+|---|---|---|
+| Packet 01 | S→C | publicKey 加密，附带 key1 |
+| Packet 02 | C→S | key1 加密，附带 clientNextKey |
+| Packet 03 | S→C | clientNextKey 加密 |
+| Packet 04 | C→S | key1 加密 |
+| Packet 05 | S→C | key1 加密 |
+
+### v1.6.4 — 握手循环修复
+
+**问题：** 握手完成后客户端卡在"正在上传到服务器"，服务端报 `Received unknown packet id 72`。
+
+**根因：** `handleRequestModel` 在握手完成后发送 `S2CVersionCheckPacket`，客户端收到后重新触发握手，导致握手循环。上传数据包在新握手中到达，syncStep 不匹配被拒绝。
+
+**修复：** 移除握手完成后发送的 VersionCheck / SyncAuthModels / SyncStarModels。
+
+### v1.6.5 — 重复握手修复
+
+**问题：** 客户端 UI 反复闪烁"准备中"。
+
+**根因：** `handleVersionCheck` 无条件调用 `initiateHandshake()`，而 CapabilityEvent（Fox Model Loader 组件）在 tick 200/600/1800 重发 VersionCheck 作为重试机制。每次重发都触发新的握手。
+
+**修复：** `handleVersionCheck` 添加 `syncStep == 0` 前置检查，只在尚未开始握手时才启动。
+
+### v1.6.6 — 模型上传修复
+
+**问题：** 客户端上传模型时服务端断线，报 `DecoderException: Failed to decode packet 'serverbound/minecraft:custom_payload'`。
+
+**根因：** `upload.chunk-size` 默认值 1048576（1MB）过大。Fox Model Loader 客户端使用 chunkSize=32000（32KB），但服务端配置为 1MB，导致单个 custom_payload 包过大，在 ViaVersion 的 Netty 管道中解码失败。客户端日志确认：1.15MB 模型仅拆成 2 块（1MB + 0.15MB），而非预期的 ~36 块。
+
+**修复：**
+- `chunk-size` 默认值从 1048576 改为 32000，与 Fox Model Loader 客户端一致
+- `allow-upload` 默认改为 `true`
+- `debug` 默认改为 `true`
+
 ---
 
 ## 项目结构
@@ -81,10 +176,18 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 YSMSync/
 ├── src/main/java/com/ysmsync/
 │   ├── YSMPlugin.java              # 主插件入口
+│   ├── crypto/
+│   │   ├── ChaCha20Base.java       # ChaCha20 流密码基类
+│   │   ├── CityHash.java           # CityHash64 哈希算法
+│   │   ├── MT19937.java            # Mersenne Twister 伪随机数
+│   │   ├── ServerKeyManager.java   # 服务端密钥管理
+│   │   ├── XChaCha20.java          # XChaCha20 流密码
+│   │   └── YsmCrypt.java           # YSM 加密/解密工具
 │   ├── model/
 │   │   ├── ModelFileManager.java   # 模型文件存储管理
 │   │   └── ModelUploadManager.java # 模型上传管理
 │   ├── net/
+│   │   ├── YSMByteBuf.java         # YSM 小端序 ByteBuf 包装器
 │   │   └── YSMChannelHandler.java  # Netty Pipeline 拦截器
 │   ├── packet/
 │   │   └── YSMPacketHandler.java   # 数据包处理分发
@@ -93,12 +196,13 @@ YSMSync/
 │   │   └── YSMStateManager.java    # 全局状态管理
 │   ├── storage/
 │   │   └── YSMStorage.java         # SQLite 存储层
+│   ├── update/
+│   │   └── UpdateChecker.java      # 版本检查与自动更新
 │   └── util/
 │       └── VarIntUtil.java         # VarInt/VarLong 编解码
 ├── src/main/resources/
 │   ├── plugin.yml                  # 插件元数据
 │   └── config.yml                  # 默认配置
-├── .github/workflows/build.yml     # CI/CD 自动构建发布
 └── build.gradle.kts                # Gradle 构建脚本
 ```
 
@@ -165,4 +269,13 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.3.0 | 拦截器放在 decoder 之后无效 | 改为 `addBefore("decoder", ...)` |
 | v1.3.0 | 中文变量名 `int标记` | 改为 `int mark` |
 | v1.3.1 | `NoSuchMethodException: ServerPlayer.connection()` | Paper 26.1.2 中改为字段访问 |
+| v1.5.0 | 与 AuthMe 等登录插件冲突 | 移除误拦截原版数据包的路径 |
+| v1.5.1 | `IllegalReferenceCountException` ByteBuf 释放后访问 | finally 块不再访问已释放的 ByteBuf |
+| v1.6.0 | 客户端卡在"正在校验" | 移植完整加密握手协议（Packet 01-05） |
+| v1.6.1 | 安全与健壮性问题 | 防御性克隆、溢出检查、单例优化 |
+| v1.6.2 | 客户端卡在"正在等待握手"/"正在上传" | 修复 CustomPayload 频道名读取 + 数据包路由 |
+| v1.6.3 | `Integrity check failed` / `IndexOutOfBoundsException` | Packet 04 解密密钥改回 key1 + 边界检查 |
+| v1.6.4 | 握手循环导致 `unknown packet id 72` 断线 | 移除握手后 VersionCheck 发送 |
+| v1.6.5 | 客户端 UI 反复闪烁"准备中" | handleVersionCheck 添加 syncStep 前置检查 |
+| v1.6.6 | `DecoderException: Failed to decode custom_payload` 上传断线 | chunk-size 从 1MB 改为 32KB，与 Fox Model Loader 客户端一致 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

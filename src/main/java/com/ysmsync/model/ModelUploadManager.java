@@ -38,7 +38,7 @@ public class ModelUploadManager {
     public ModelUploadManager(YSMPlugin plugin, ModelFileManager modelFileManager) {
         this.plugin = plugin;
         this.modelFileManager = modelFileManager;
-        this.defaultChunkSize = plugin.getConfig().getInt("upload.chunk-size", 1048576); // 1MB
+        this.defaultChunkSize = plugin.getConfig().getInt("upload.chunk-size", 32000); // 32KB, 与 Fox Model Loader 一致
         this.maxTotalBytes = plugin.getConfig().getInt("upload.max-size", 10485760);     // 10MB
         this.chunksPerTick = plugin.getConfig().getInt("upload.chunks-per-tick", 4);
     }

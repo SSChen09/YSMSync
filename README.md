@@ -8,15 +8,16 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.6.6
+- **修复模型上传** — `chunk-size` 默认值从 1MB 改为 32KB，与 Fox Model Loader 客户端一致，修复过大的 custom_payload 包在 ViaVersion 管道中解码失败导致断线的问题
+- **启用上传功能** — `allow-upload` 默认改为 `true`
+- **开启调试日志** — `debug` 默认改为 `true`
+
 ### v1.6.5
 - **修复重复握手** — `handleVersionCheck` 无条件调用 `initiateHandshake()`，导致 CapabilityEvent 重发 VersionCheck 时重复触发握手，客户端 UI 反复闪烁"准备中"
 
 ### v1.6.4
 - **修复握手循环** — 握手完成后不再发送 `VersionCheck`，避免客户端重复触发握手导致握手循环和上传崩溃
-
-### v1.6.3
-- **修复 Packet 04 解密密钥** — `handleRequestModel` 错误使用 `clientNextKey` 解密，客户端实际用 `key1` 加密 Packet 04，导致解密产生垃圾数据并崩溃
-- **skipGarbageHeader 边界检查** — 垃圾头部长度超限时抛出明确异常而非 Netty IndexOutOfBoundsException
 
 ### v1.6.2
 - **修复 CustomPayload 频道名读取** — `handleCustomPayload` 错误读取两个字符串作为频道名，导致 payload 被截断，客户端卡在握手；改为读取单个 ResourceLocation 字符串
@@ -61,19 +62,19 @@ protocol-version: "2.6.0"
 brand: "open_ysm:v1"
 
 # 是否允许客户端上传模型文件
-allow-upload: false
+allow-upload: true
 
 # 上传设置
 upload:
   # 最大上传文件大小（字节），默认 10MB
   max-size: 10485760
-  # 每个分块大小（字节），默认 1MB
-  chunk-size: 1048576
+  # 每个分块大小（字节），默认 32KB（与 Fox Model Loader 客户端一致）
+  chunk-size: 32000
   # 每 tick 最大分块数
   chunks-per-tick: 4
 
 # 调试日志
-debug: false
+debug: true
 
 # 启动时检查更新
 check-update: true

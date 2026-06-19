@@ -16,8 +16,8 @@ allow-upload: false
 upload:
   # Maximum upload file size in bytes (default: 10MB)
   max-size: 10485760
-  # Chunk size in bytes sent per request (default: 1MB)
-  chunk-size: 1048576
+  # Chunk size in bytes sent per request (default: 32KB, matching Fox Model Loader)
+  chunk-size: 32000
   # Maximum chunks allowed per tick
   chunks-per-tick: 4
 
