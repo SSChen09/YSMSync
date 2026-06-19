@@ -12,7 +12,7 @@ import java.util.logging.Level;
 
 /**
  * 模型文件存储管理器。
- * 目录结构：plugins/YSMSync/models/{玩家UUID}/{模型名}.ysm
+ * 目录结构：plugins/YSMSync/models/{玩家UUID}/{模型名}
  * 每个玩家一个子目录，支持存储多个模型。
  */
 public class ModelFileManager {
@@ -50,7 +50,7 @@ public class ModelFileManager {
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(name, s2cData);
 
         Path playerDir = modelsDir.resolve(playerUuid.toString());
-        Path file = playerDir.resolve(name + ".ysm");
+        Path file = playerDir.resolve(name);
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 Files.createDirectories(playerDir);
@@ -86,7 +86,7 @@ public class ModelFileManager {
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(safeName, s2cData);
 
         Path playerDir = modelsDir.resolve(playerUuid.toString());
-        Path file = playerDir.resolve(safeName + ".ysm");
+        Path file = playerDir.resolve(safeName);
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 Files.createDirectories(playerDir);
@@ -140,7 +140,7 @@ public class ModelFileManager {
     /**
      * 启动时从磁盘加载所有已存储的模型数据到内存。
      * 支持两种目录结构：
-     * - 新格式：models/{UUID}/{模型名}.ysm
+     * - 新格式：models/{UUID}/{模型名}
      * - 旧格式：models/{UUID}.ysm（自动迁移到新格式）
      */
     public void loadAllFromDisk() {
@@ -167,11 +167,11 @@ public class ModelFileManager {
                         byte[] data = Files.readAllBytes(entry);
                         Path playerDir = modelsDir.resolve(uuid.toString());
                         Files.createDirectories(playerDir);
-                        Path target = playerDir.resolve("model.ysm");
+                        Path target = playerDir.resolve("model");
                         Files.move(entry, target, StandardCopyOption.REPLACE_EXISTING);
                         playerModels.computeIfAbsent(uuid, k -> new ConcurrentHashMap<>()).put("model", data);
                         count++;
-                        plugin.logDebug("Migrated model file: " + name + " -> " + uuid + "/model.ysm");
+                        plugin.logDebug("Migrated model file: " + name + " -> " + uuid + "/model");
                     } catch (IllegalArgumentException e) {
                         plugin.getLogger().log(Level.WARNING, "Invalid model file name: " + name);
                     } catch (IOException e) {
@@ -200,10 +200,12 @@ public class ModelFileManager {
         int count = 0;
         Map<String, byte[]> models = playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>());
 
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(playerDir, "*.ysm")) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(playerDir)) {
             for (Path file : stream) {
+                if (!Files.isRegularFile(file)) continue;
                 String fileName = file.getFileName().toString();
-                String modelName = fileName.replace(".ysm", "");
+                // 旧格式带 .ysm 后缀，迁移后去除；新格式无后缀
+                String modelName = fileName.endsWith(".ysm") ? fileName.replace(".ysm", "") : fileName;
                 try {
                     byte[] data = Files.readAllBytes(file);
                     models.put(modelName, data);

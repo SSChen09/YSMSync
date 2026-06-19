@@ -31,7 +31,7 @@
 ### v1.1.0 — 模型文件服务端存储
 
 **新增功能：**
-- 服务端缓存 `.ysm` 模型文件（`plugins/YSMSync/models/{UUID}.ysm`）
+- 服务端缓存 `.ysm` 模型文件（`plugins/YSMSync/models/{UUID}`）
 - 新玩家加入时自动推送已存储的模型文件
 - 内存缓存 + 磁盘持久化
 
@@ -187,7 +187,7 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **变更：** 模型存储从扁平文件改为按玩家分目录：
 - 旧格式：`models/{UUID}.ysm`（每玩家仅一个模型）
-- 新格式：`models/{UUID}/{模型名}.ysm`（每玩家支持多个模型）
+- 新格式：`models/{UUID}/{模型名}`（每玩家支持多个模型）
 
 **实现：**
 - `ModelFileManager` 内存结构从 `Map<UUID, byte[]>` 改为 `Map<UUID, Map<String, byte[]>>`
@@ -307,5 +307,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.6.6 | `DecoderException: Failed to decode custom_payload` 上传断线 | chunk-size 从 1MB 改为 32KB，与 Fox Model Loader 客户端一致 |
 | v1.6.7 | `Size mismatch: expected X got Y` 上传数据不完整 | handleUploadChunk 读取 writeByteArray 的 VarInt 长度前缀 |
 | v1.6.7 | 上传成功但 models/ 目录无文件 | 新增 storeRawModelData，原始 .ysm 数据直接包装为 S2C 格式存储 |
-| v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}.ysm，自动迁移旧格式 |
+| v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}，自动迁移旧格式 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

@@ -10,7 +10,7 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ### v1.7.0
 
-- **存储路径重构** — 模型存储从 `models/{UUID}.ysm` 改为 `models/{UUID}/{模型名}.ysm`，支持每个玩家存储多个模型，旧格式自动迁移
+- **存储路径重构** — 模型存储从 `models/{UUID}.ysm` 改为 `models/{UUID}/{模型名}`，支持每个玩家存储多个模型，旧格式自动迁移
 
 ### v1.6.7
 
@@ -87,7 +87,7 @@ auto-update: false
 3. 版本检查通过后，启动加密握手流程（Packet 01-05），完成密钥交换
 4. 握手完成后，同步所有已存储的模型给新玩家
 5. 玩家切换模型时，广播切换信息给其他玩家
-6. 模型文件存储在 `plugins/YSMSync/models/{玩家UUID}/{模型名}.ysm` 目录
+6. 模型文件存储在 `plugins/YSMSync/models/{玩家UUID}/{模型名}` 目录
 
 ## 协议支持
 
