@@ -122,8 +122,10 @@ public class YSMPacketHandler {
         PlayerYSMState state = stateManager.getOrCreate(player.getUniqueId());
         state.setYsmVersion(clientVersion);
 
-        // 版本检查完成后，启动加密握手（而非直接完成握手）
-        stateManager.initiateHandshake(player);
+        // 仅在尚未开始握手时启动，避免 CapabilityEvent 重发 VersionCheck 导致重复握手
+        if (state.getSyncStep() == 0) {
+            stateManager.initiateHandshake(player);
+        }
     }
 
     /**

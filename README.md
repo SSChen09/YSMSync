@@ -8,6 +8,9 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 
 ## 最近更新
 
+### v1.6.5
+- **修复重复握手** — `handleVersionCheck` 无条件调用 `initiateHandshake()`，导致 CapabilityEvent 重发 VersionCheck 时重复触发握手，客户端 UI 反复闪烁"准备中"
+
 ### v1.6.4
 - **修复握手循环** — 握手完成后不再发送 `VersionCheck`，避免客户端重复触发握手导致握手循环和上传崩溃
 
