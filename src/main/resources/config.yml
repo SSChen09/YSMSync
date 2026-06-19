@@ -10,7 +10,7 @@ protocol-version: "2.6.0"
 brand: "open_ysm:v1"
 
 # Whether to allow model upload from clients
-allow-upload: false
+allow-upload: true
 
 # Upload settings
 upload:
@@ -22,7 +22,7 @@ upload:
   chunks-per-tick: 4
 
 # Debug logging
-debug: false
+debug: true
 
 # Check for updates on startup
 check-update: true

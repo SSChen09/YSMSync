@@ -5,9 +5,9 @@
 在 Spigot/Paper 服务器上移植 Yes Steve Model 的模型同步功能，支持 YSM 2.6.0 协议。
 
 灵感来源：
-- [OpenYSM / YesSteveModel](https://github.com/OpenYSM/YesSteveModel) — YSM 协议定义
-- [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) — 协议细节参考
-- [Freesia II](https://github.com/FreesiaTeam/Freesia) — 跨服架构与 Netty 拦截思路
+- [OpenYSM](https://github.com/OpenYSM/OpenYSM) — YSM 协议定义
+- [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) — 协议细节参考
+- [Freesia II](https://github.com/NguyenDevs/FreesiaII) — 跨服架构与 Netty 拦截思路
 
 ---
 
@@ -157,6 +157,17 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **修复：** `handleVersionCheck` 添加 `syncStep == 0` 前置检查，只在尚未开始握手时才启动。
 
+### v1.6.6 — 模型上传配置修复
+
+**问题：** 客户端上传模型时服务端断线，报 `DecoderException: Failed to decode packet 'serverbound/minecraft:custom_payload'`。
+
+**根因：** `upload.chunk-size` 默认值 1048576（1MB）过大。Fox Model Loader 客户端使用 chunkSize=32000（32KB），但服务端配置为 1MB，导致单个 custom_payload 包过大，在 ViaVersion 的 Netty 管道中解码失败。
+
+**修复：**
+- `chunk-size` 默认值从 1048576 改为 32000，与 Fox Model Loader 客户端一致
+- `allow-upload` 默认改为 `true`
+- `debug` 默认改为 `true`
+
 ### v1.6.7 — 模型上传协议与存储修复
 
 **问题 1：** chunk-size 修复后上传仍失败，客户端显示 `Size mismatch: expected 560917 got 544051`。
@@ -172,16 +183,17 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - `ModelFileManager` 新增 `storeRawModelData` 方法，直接将原始 .ysm 数据包装为 S2C 格式（packetId=1 + 数据）后存储
 - `handleUploadFinish` 改为调用 `storeRawModelData`
 
-### v1.6.6 — 模型上传配置修复
+### v1.7.0 — 存储路径重构
 
-**问题：** 客户端上传模型时服务端断线，报 `DecoderException: Failed to decode packet 'serverbound/minecraft:custom_payload'`。
+**变更：** 模型存储从扁平文件改为按玩家分目录：
+- 旧格式：`models/{UUID}.ysm`（每玩家仅一个模型）
+- 新格式：`models/{UUID}/{模型名}.ysm`（每玩家支持多个模型）
 
-**根因：** `upload.chunk-size` 默认值 1048576（1MB）过大。Fox Model Loader 客户端使用 chunkSize=32000（32KB），但服务端配置为 1MB，导致单个 custom_payload 包过大，在 ViaVersion 的 Netty 管道中解码失败。
-
-**修复：**
-- `chunk-size` 默认值从 1048576 改为 32000，与 Fox Model Loader 客户端一致
-- `allow-upload` 默认改为 `true`
-- `debug` 默认改为 `true`
+**实现：**
+- `ModelFileManager` 内存结构从 `Map<UUID, byte[]>` 改为 `Map<UUID, Map<String, byte[]>>`
+- `storeRawModelData` 新增 `modelName` 参数，用作文件名
+- `loadAllFromDisk` 支持新旧格式，旧扁平文件自动迁移到子目录
+- `sanitizeFileName` 清理文件名中的非法字符（`\ / : * ? " < > |`）
 
 ---
 
@@ -295,4 +307,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.6.6 | `DecoderException: Failed to decode custom_payload` 上传断线 | chunk-size 从 1MB 改为 32KB，与 Fox Model Loader 客户端一致 |
 | v1.6.7 | `Size mismatch: expected X got Y` 上传数据不完整 | handleUploadChunk 读取 writeByteArray 的 VarInt 长度前缀 |
 | v1.6.7 | 上传成功但 models/ 目录无文件 | 新增 storeRawModelData，原始 .ysm 数据直接包装为 S2C 格式存储 |
+| v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}.ysm，自动迁移旧格式 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

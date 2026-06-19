@@ -2,11 +2,15 @@
 
 > **Warning** 本项目使用 GitHub Actions 自动构建，作者也无法保证每个构建版本完全没有 bug。如遇问题请到 [Issues](https://github.com/SSChen09/YSMSync/issues) 反馈。
 
-Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/OpenYSM) / [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) 的模型同步功能。
+Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/OpenYSM) / [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) 的模型同步功能。
 
 玩家在客户端安装 YSM 模组后，服务器自动同步所有玩家的模型选择，使每个人都能看到彼此的自定义模型。
 
 ## 最近更新
+
+### v1.7.0
+
+- **存储路径重构** — 模型存储从 `models/{UUID}.ysm` 改为 `models/{UUID}/{模型名}.ysm`，支持每个玩家存储多个模型，旧格式自动迁移
 
 ### v1.6.7
 
@@ -19,36 +23,20 @@ Paper 服务端插件，实现 [Yes Steve Model](https://github.com/OpenYSM/Open
 - **启用上传功能** — `allow-upload` 默认改为 `true`
 - **开启调试日志** — `debug` 默认改为 `true`
 
-### v1.6.5
-
-- **修复重复握手** — `handleVersionCheck` 无条件调用 `initiateHandshake()`，导致 CapabilityEvent 重发 VersionCheck 时重复触发握手，客户端 UI 反复闪烁"准备中"
-
-### v1.6.4
-
-- **修复握手循环** — 握手完成后不再发送 `VersionCheck`，避免客户端重复触发握手导致握手循环和上传崩溃
-
-### v1.6.2
-
-- **修复 CustomPayload 频道名读取** — `handleCustomPayload` 错误读取两个字符串作为频道名，导致 payload 被截断，客户端卡在握手；改为读取单个 ResourceLocation 字符串
-- **修复解密数据包路由** — `handleIncoming` 重构：先读 VarInt packetId 再结合 syncStep 判断，用 `buf.remaining()` 提取纯加密数据，修复 `Integrity check failed` 导致客户端卡在"正在上传到服务器"
-- **修复模型实时同步格式** — `relayRawPacket` 广播 C2S 格式数据导致其他客户端无法识别，改为广播已转换的 S2C 格式
-- **CustomPayload packet ID 动态获取** — 通过 NMS 反射自动发现 packet ID，兼容不同 MC 版本（1.20-1.20.1 使用 0x18，1.20.2+ 使用 0x17）
-- **安全与健壮性** — `ServerKeyManager` / `PlayerYSMState` 的 `byte[]` getter 防御性克隆；`VarInt` 溢出检查收紧至 35 位；`CityHash` 复用为单例；上传会话 5 分钟超时自动清理
-
 ## 功能
 
 - **模型同步** — 玩家加入或切换模型时，自动广播给所有在线玩家
 - **模型文件存储** — 服务端缓存 `.ysm` 模型文件，新玩家加入时自动推送
-- **模型上传** — 客户端可将模型文件上传至服务端存储（可选，需在配置中启用）
+- **模型上传** — 客户端可将模型文件上传至服务端存储，默认启用
 - **动画转发** — 转发动画/表情指令给其他玩家
 - **Netty 拦截** — 在 Pipeline 层直接捕获 YSM 自定义频道数据包，兼容 Paper 26.1.x
 - **SQLite 持久化** — 玩家模型选择存储在 `plugins/YSMSync/ysm_data.db`，重启不丢失
 
 ## 要求
 
-- Paper 1.21.4+（已测试 Paper 26.1.2）
+- Paper 1.21.4+（仅测试 Paper 26.1.2 带 ViaVersion）
 - Java 21+
-- 客户端需安装 [Yes Steve Model](https://github.com/OpenYSM/YesSteveModel) 或 [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) 模组
+- 客户端需安装 [Yes Steve Model](https://modrinth.com/mod/yes-steve-model) 或 [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) 模组
 
 ## 安装
 
@@ -99,7 +87,7 @@ auto-update: false
 3. 版本检查通过后，启动加密握手流程（Packet 01-05），完成密钥交换
 4. 握手完成后，同步所有已存储的模型给新玩家
 5. 玩家切换模型时，广播切换信息给其他玩家
-6. 模型文件存储在 `plugins/YSMSync/models/` 目录（按玩家 UUID 命名）
+6. 模型文件存储在 `plugins/YSMSync/models/{玩家UUID}/{模型名}.ysm` 目录
 
 ## 协议支持
 
@@ -116,16 +104,16 @@ auto-update: false
 | 7  | C→S | PlayAnimation             |
 | 8  | S→C | SyncStarModels            |
 | 9  | C→S | StopAnimation             |
-| 15 | C→S | SyncAnimationExpression   |
-| 17 | C→S | Unknown17                 |
+| 15 | C→S | CompleteFeedback          |
+| 17 | C→S | PlayAnimation             |
 | 18 | C→S | SyncAnimationExpression   |
 | 19 | S→C | SyncAnimationExpression   |
-| 21 | S→C | Unknown21                 |
-| 23 | C→S | Unknown23                 |
+| 21 | S→C | SyncPlayerState           |
+| 23 | C→S | SwingArm                  |
 | 51 | S→C | VersionCheck              |
 | 52 | C→S | VersionCheckResponse      |
 | 70 | C→S | UploadStart               |
-| Q  | S→C | UploadStartResponse       |
+| 71 | S→C | UploadStartResponse       |
 | 72 | C→S | UploadChunk               |
 | 73 | C→S | UploadFinish              |
 | 74 | S→C | UploadResult              |
@@ -182,10 +170,10 @@ cd YSMSync
 
 本项目的实现思路和协议解析参考了以下项目：
 
-- [Fox Model Loader](https://github.com/AntonyBlayze/Fox-Model-Loader-main) — 基于 OpenYSM 的 Fabric/NeoForge 客户端模组，提供了协议细节参考
+- [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) — 基于 OpenYSM 的 Fabric/NeoForge 客户端模组，提供了协议细节参考
 - [Freesia II](https://github.com/NguyenDevs/FreesiaII) — 跨服模型同步架构设计，其实体 ID 映射与分层同步思路对本项目的 Netty 拦截方案有重要启发
 - [Yes Steve Model](https://modrinth.com/mod/yes-steve-model) — 纯正的原版 YSM 模组
-- [OpenYSM](https://github.com/OpenYSM/OpenYSM) — 开源的 YSM 提供了协议定义与（向开源组致敬）
+- [OpenYSM](https://github.com/OpenYSM/OpenYSM) — 开源的 YSM 提供了协议定义与实现（向开源组致敬）
 
 ## 许可证
 

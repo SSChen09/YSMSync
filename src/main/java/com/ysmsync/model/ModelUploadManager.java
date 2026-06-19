@@ -23,7 +23,7 @@ public class ModelUploadManager {
 
     // uploadId -> 上传会话
     private final Map<Long, UploadSession> sessions = new ConcurrentHashMap<>();
-    private long nextUploadId = 1;
+    private long nextUploadId = 0;
 
     // 上传状态码
     public static final byte STATUS_OK = 0;
@@ -50,6 +50,7 @@ public class ModelUploadManager {
         public final long uploadId;
         public final UUID playerUuid;
         public final String modelId;
+        public final String fileName;
         public final int totalBytes;
         public final String expectedSha256;
         public final ByteArrayOutputStream buffer;
@@ -57,10 +58,11 @@ public class ModelUploadManager {
         public int receivedBytes;
         public boolean finished;
 
-        public UploadSession(long uploadId, UUID playerUuid, String modelId, int totalBytes, String expectedSha256) {
+        public UploadSession(long uploadId, UUID playerUuid, String modelId, String fileName, int totalBytes, String expectedSha256) {
             this.uploadId = uploadId;
             this.playerUuid = playerUuid;
             this.modelId = modelId;
+            this.fileName = fileName;
             this.totalBytes = totalBytes;
             this.expectedSha256 = expectedSha256;
             this.buffer = new ByteArrayOutputStream(totalBytes);
@@ -101,8 +103,8 @@ public class ModelUploadManager {
         }
 
         // 创建会话
-        long uploadId = nextUploadId++;
-        UploadSession session = new UploadSession(uploadId, playerUuid, modelId, totalBytes, sha256);
+        long uploadId = ++nextUploadId;
+        UploadSession session = new UploadSession(uploadId, playerUuid, modelId, fileName, totalBytes, sha256);
         sessions.put(uploadId, session);
 
         plugin.logDebug("Upload session created: id=" + uploadId + " model=" + modelId);
@@ -117,7 +119,7 @@ public class ModelUploadManager {
      */
     public boolean handleUploadChunk(ByteBuffer buf) {
         long uploadId = VarIntUtil.readVarLong(buf);
-        int offset = VarIntUtil.readVarInt(buf);
+        VarIntUtil.readVarInt(buf); // offset（未使用，但需消费字节）
         // 客户端使用 writeByteArray，数据前有 VarInt 长度前缀
         int dataLen = VarIntUtil.readVarInt(buf);
         byte[] data = new byte[dataLen];
@@ -178,7 +180,10 @@ public class ModelUploadManager {
         }
 
         // 存储模型文件（上传数据是原始 .ysm 文件，需用 storeRawModelData 包装为 S2C 格式）
-        modelFileManager.storeRawModelData(session.playerUuid, fileData);
+        // 优先使用文件名，回退到模型 ID
+        String modelName = (session.fileName != null && !session.fileName.isEmpty())
+                ? session.fileName : session.modelId;
+        modelFileManager.storeRawModelData(session.playerUuid, modelName, fileData);
 
         // 计算哈希值
         long h1 = hash1(fileData);
