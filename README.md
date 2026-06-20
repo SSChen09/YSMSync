@@ -116,6 +116,8 @@ cd YSMSync
 
 ## 致谢
 
+本项目全部使用 [Trae](https://trae.ai) + [XiaoMi MIMO](https://mimo.mi.com/) 进行开发构建。
+
 本项目的实现思路和协议解析参考了以下项目：
 
 - [Fox Model Loader](https://github.com/sdf123098/Fox-Model-Loader) — 基于 OpenYSM 的 Fabric/NeoForge 客户端模组，提供了协议细节参考

@@ -2,6 +2,8 @@
 
 ## 项目概述
 
+> 本项目全部使用 [Trae](https://trae.ai) + [XiaoMi MIMO](https://mimo.mi.com/) 进行开发构建。
+
 在 Spigot/Paper 服务器上移植 Yes Steve Model 的模型同步功能，支持 YSM 2.6.0 协议。
 
 灵感来源：
