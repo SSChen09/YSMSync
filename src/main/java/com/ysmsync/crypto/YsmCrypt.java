@@ -360,21 +360,7 @@ public class YsmCrypt {
         // 读取 padding 长度并跳过，然后 zstd 解压
         int n = ((chachaDecrypted[0] & 0xFF) | ((chachaDecrypted[1] & 0xFF) << 8)) & 0x3FF;
         int zstdOffset = 2 + n;
-        // 调试：打印 zstd 帧前 8 字节（应该包含魔数 0x28b52ffd）
-        if (chachaDecrypted.length >= zstdOffset + 4) {
-            System.out.println("[YSMSync DEBUG] decryptYsmFile: total=" + fileData.length
-                    + " padding=" + n + " zstdOffset=" + zstdOffset
-                    + " zstdDataLen=" + (chachaDecrypted.length - zstdOffset)
-                    + " zstdMagic=" + bytesToHex(chachaDecrypted, zstdOffset, Math.min(8, chachaDecrypted.length - zstdOffset)));
-        }
         return YsmZstd.decompress(chachaDecrypted, zstdOffset, chachaDecrypted.length - zstdOffset);
     }
 
-    private static String bytesToHex(byte[] data, int offset, int len) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = offset; i < offset + len; i++) {
-            sb.append(String.format("%02x ", data[i] & 0xFF));
-        }
-        return sb.toString();
-    }
 }
