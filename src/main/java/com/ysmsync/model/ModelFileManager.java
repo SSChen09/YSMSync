@@ -116,8 +116,15 @@ public class ModelFileManager {
 
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(safeName, s2cData);
 
-        // 用原始数据创建加密缓存
-        createCacheEntry(playerUuid, safeName, rawData);
+        // 解密 .ysm 文件后创建缓存（客户端期望缓存中存储解密后的 VarInt 格式明文）
+        byte[] decryptedModel = null;
+        try {
+            decryptedModel = YsmCrypt.decryptYsmFile(rawData);
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to decrypt .ysm file for " + safeName + ", caching raw data", e);
+        }
+        byte[] cacheData = (decryptedModel != null) ? decryptedModel : rawData;
+        createCacheEntry(playerUuid, safeName, cacheData);
 
         Path playerDir = modelsDir.resolve(playerUuid.toString());
         Path file = playerDir.resolve(safeName);

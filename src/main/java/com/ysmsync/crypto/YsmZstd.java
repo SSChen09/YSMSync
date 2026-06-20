@@ -28,7 +28,16 @@ public class YsmZstd {
      * YSM Block Header 洗白 + 标准 Zstd 解压。
      */
     public static byte[] decompress(byte[] data) {
-        byte[] washed = wash(data);
+        return decompress(data, 0, data.length);
+    }
+
+    /**
+     * YSM Block Header 洗白 + 标准 Zstd 解压（支持偏移和长度）。
+     */
+    public static byte[] decompress(byte[] data, int offset, int length) {
+        byte[] sub = (offset == 0 && length == data.length) ? data
+                : java.util.Arrays.copyOfRange(data, offset, offset + length);
+        byte[] washed = wash(sub);
         long decompressedSize = Zstd.decompressedSize(washed);
         if (decompressedSize >= 0) {
             byte[] output = new byte[(int) decompressedSize];

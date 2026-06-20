@@ -18,6 +18,8 @@ public class YsmCrypt {
     public static final long SEED_KEY_DERIVATION = 0xD017CBBA7B5D3581L;
     public static final long SEED_CACHE_DECRYPTION = 0xD1C3D1D13A99752BL;
     public static final long SEED_CACHE_VERIFICATION = 0xF346451E53A22261L;
+    public static final long SEED_FILE_VERIFICATION = 0x9E5599DB80C67C29L;
+    public static final long SEED_RES_VERIFICATION = 0xA62B1A2C43842BC3L;
 
     /**
      * 客户端硬编码公钥，用于握手第一步加密。
@@ -251,5 +253,113 @@ public class YsmCrypt {
             value >>>= 7;
         }
         buf.put((byte) value);
+    }
+
+    /**
+     * MT19937 XOR 原地操作（不创建新数组）。
+     */
+    private static void mt19937XorInPlace(byte[] data, byte[] currentKeyIv, long seedDerivation) {
+        long mtSeed = CITY_HASH.hash64WithSeed(currentKeyIv, seedDerivation);
+        MT19937 mt = new MT19937(mtSeed);
+        int i = 0;
+        while (i < data.length) {
+            long rnd = mt.extract_number();
+            for (int j = 0; j < 8 && i < data.length; ++j) {
+                byte keystreamByte = (byte) ((rnd >>> (j * 8)) & 0xFF);
+                data[i] = (byte) (data[i] ^ keystreamByte);
+                i++;
+            }
+        }
+    }
+
+    /**
+     * 修改版 ChaCha 解密（YSM 文件专用），根据 seed 动态调整轮数和块大小。
+     * 与 modifiedChaChaEncrypt 互为逆操作。
+     */
+    private static byte[] modifiedChaChaDecrypt(byte[] data, int dataOff, int dataLen,
+            byte[] key, byte[] iv, long seed) throws Exception {
+        byte[] keyIv = new byte[56];
+        System.arraycopy(key, 0, keyIv, 0, 32);
+        System.arraycopy(iv, 0, keyIv, 32, 24);
+
+        long hash2 = CITY_HASH.hash64WithSeed(keyIv, seed);
+        int nextRoundSize = (int) (((hash2 & 0x3FL) | 0x40L) << 6);
+        int rounds = (int) (10 * Long.remainderUnsigned(hash2, 3) + 10);
+
+        XChaCha20 ctx = new XChaCha20(key, iv, rounds);
+        byte[] result = new byte[dataLen];
+        int blockPointer = 0;
+
+        while (blockPointer < dataLen) {
+            if (blockPointer + nextRoundSize > dataLen) {
+                nextRoundSize = dataLen - blockPointer;
+            }
+            byte[] chunk = Arrays.copyOfRange(data, dataOff + blockPointer, dataOff + blockPointer + nextRoundSize);
+            byte[] decChunk = ctx.processBytes(chunk, 0, nextRoundSize);
+            System.arraycopy(decChunk, 0, result, blockPointer, nextRoundSize);
+            blockPointer += nextRoundSize;
+
+            if (blockPointer < dataLen) {
+                long resHash = CITY_HASH.hash64WithSeed(result, blockPointer - nextRoundSize, nextRoundSize, seed);
+                nextRoundSize = ctx.updateStateYSM(resHash);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 解密 .ysm 文件，返回解密并解压后的模型明文数据。
+     * 移植自 Fox Model Loader YsmCrypt.decryptYsmFile。
+     *
+     * @param fileData 原始 .ysm 文件字节
+     * @return 解密解压后的模型明文（可直接传入 encryptServerCache）
+     */
+    public static byte[] decryptYsmFile(byte[] fileData) throws Exception {
+        if (fileData.length < 8 + 24 + 32 + 8) {
+            throw new RuntimeException("Invalid YSM file: File too short.");
+        }
+
+        // 找到文本头终止符 0x00
+        int headerLength = 0;
+        while (headerLength < fileData.length && fileData[headerLength] != 0x00) {
+            headerLength++;
+        }
+
+        // 从文件尾部提取 key(32B) + iv(24B) + fileHash(8B)
+        int tailOffset = fileData.length - 64;
+        byte[] key = Arrays.copyOfRange(fileData, tailOffset, tailOffset + 32);
+        byte[] iv = Arrays.copyOfRange(fileData, tailOffset + 32, tailOffset + 56);
+        long fileHash = ByteBuffer.wrap(fileData, tailOffset + 56, 8)
+                .order(ByteOrder.LITTLE_ENDIAN).getLong();
+
+        // 用 CityHash64 验证签名
+        long calculatedHash = CITY_HASH.hash64WithSeed(fileData, 0, fileData.length - 8, SEED_FILE_VERIFICATION);
+        if (calculatedHash != fileHash) {
+            throw new RuntimeException("Corrupted YSM file: File hash mismatch.");
+        }
+
+        // 读取 crypto 版本号 (4 字节 LE int32)
+        int ptrBinaryData = headerLength + 1;
+        int crypto = ByteBuffer.wrap(fileData, ptrBinaryData, 4)
+                .order(ByteOrder.LITTLE_ENDIAN).getInt();
+        if (crypto != 3) {
+            throw new RuntimeException("Invalid YSM file: Crypto version is not 3.");
+        }
+        ptrBinaryData += 4;
+
+        // modifiedChaChaDecrypt 解密
+        byte[] chachaDecrypted = modifiedChaChaDecrypt(fileData, ptrBinaryData,
+                tailOffset - ptrBinaryData, key, iv, SEED_RES_VERIFICATION);
+
+        // MT19937 XOR 洗白
+        byte[] keyIv = new byte[56];
+        System.arraycopy(key, 0, keyIv, 0, 32);
+        System.arraycopy(iv, 0, keyIv, 32, 24);
+        mt19937XorInPlace(chachaDecrypted, keyIv, SEED_KEY_DERIVATION);
+
+        // 读取 padding 长度并跳过，然后 zstd 解压
+        int n = ((chachaDecrypted[0] & 0xFF) | ((chachaDecrypted[1] & 0xFF) << 8)) & 0x3FF;
+        int zstdOffset = 2 + n;
+        return YsmZstd.decompress(chachaDecrypted, zstdOffset, chachaDecrypted.length - zstdOffset);
     }
 }

@@ -14,26 +14,29 @@ public class CityHash {
     public static final long kMul = 0xDE0F6EE09BDBAB91L;
 
     public long hash64(byte[] byteArray) {
-        int len = byteArray.length;
+        return hash64(byteArray, 0, byteArray.length);
+    }
+
+    public long hash64(byte[] byteArray, int base, int len) {
         if (len <= 32) {
             if (len <= 16) {
-                return hashLen0to16(byteArray);
+                return hashLen0to16(byteArray, base, len);
             } else {
-                return hashLen17to32(byteArray);
+                return hashLen17to32(byteArray, base, len);
             }
         } else if (len <= 64) {
-            return hashLen33to64(byteArray);
+            return hashLen33to64(byteArray, base, len);
         }
 
-        long x = fetch64(byteArray, len - 40);
-        long y = fetch64(byteArray, len - 16) + fetch64(byteArray, len - 56);
-        long z = hashLen16(fetch64(byteArray, len - 48) + len, fetch64(byteArray, len - 24));
-        Number128 v = weakHashLen32WithSeeds(byteArray, len - 64, len, z);
-        Number128 w = weakHashLen32WithSeeds(byteArray, len - 32, y + k1, x);
-        x = x * k1 + fetch64(byteArray, 0);
+        long x = fetch64(byteArray, base + len - 40);
+        long y = fetch64(byteArray, base + len - 16) + fetch64(byteArray, base + len - 56);
+        long z = hashLen16(fetch64(byteArray, base + len - 48) + len, fetch64(byteArray, base + len - 24));
+        Number128 v = weakHashLen32WithSeeds(byteArray, base + len - 64, len, z);
+        Number128 w = weakHashLen32WithSeeds(byteArray, base + len - 32, y + k1, x);
+        x = x * k1 + fetch64(byteArray, base);
 
-        len = (len - 1) & ~63;
-        int pos = 0;
+        int remaining = (len - 1) & ~63;
+        int pos = base;
         do {
             x = rotate(x + y + v.getLowValue() + fetch64(byteArray, pos + 8), 37) * k1;
             y = rotate(y + v.getHiValue() + fetch64(byteArray, pos + 48), 42) * k1;
@@ -46,8 +49,8 @@ public class CityHash {
             x = z;
             z = swapValue;
             pos += 64;
-            len -= 64;
-        } while (len != 0);
+            remaining -= 64;
+        } while (remaining != 0);
         return hashLen16(hashLen16(v.getLowValue(), w.getLowValue()) + shiftMix(y) * k1 + z,
                 hashLen16(v.getHiValue(), w.getHiValue()) + x);
     }
@@ -56,29 +59,36 @@ public class CityHash {
         return hashLen16(hash64(raw) - seed0, seed1);
     }
 
+    public long hash64WithSeeds(byte[] raw, int base, int len, long seed0, long seed1) {
+        return hashLen16(hash64(raw, base, len) - seed0, seed1);
+    }
+
     public long hash64WithSeed(byte[] raw, long seed) {
         return hash64WithSeeds(raw, k2, seed);
     }
 
-    private long hashLen0to16(byte[] byteArray) {
-        int len = byteArray.length;
+    public long hash64WithSeed(byte[] raw, int base, int len, long seed) {
+        return hash64WithSeeds(raw, base, len, k2, seed);
+    }
+
+    private long hashLen0to16(byte[] byteArray, int base, int len) {
         if (len >= 8) {
             long mul = k2 + len * 2;
-            long a = fetch64(byteArray, 0) + k2;
-            long b = fetch64(byteArray, len - 8);
+            long a = fetch64(byteArray, base) + k2;
+            long b = fetch64(byteArray, base + len - 8);
             long c = rotate(b, 37) * mul + a;
             long d = (rotate(a, 25) + b) * mul;
             return hashLen16(c, d, mul);
         }
         if (len >= 4) {
             long mul = k2 + len * 2;
-            long a = fetch32(byteArray, 0) & 0xffffffffL;
-            return hashLen16(len + (a << 3), fetch32(byteArray, len - 4) & 0xffffffffL, mul);
+            long a = fetch32(byteArray, base) & 0xffffffffL;
+            return hashLen16(len + (a << 3), fetch32(byteArray, base + len - 4) & 0xffffffffL, mul);
         }
         if (len > 0) {
-            int a = byteArray[0] & 0xff;
-            int b = byteArray[len >>> 1] & 0xff;
-            int c = byteArray[len - 1] & 0xff;
+            int a = byteArray[base] & 0xff;
+            int b = byteArray[base + (len >>> 1)] & 0xff;
+            int c = byteArray[base + len - 1] & 0xff;
             int y = a + (b << 8);
             int z = len + (c << 2);
             return shiftMix(y * k2 ^ z * k0) * k2;
@@ -86,28 +96,26 @@ public class CityHash {
         return k2;
     }
 
-    private long hashLen17to32(byte[] byteArray) {
-        int len = byteArray.length;
+    private long hashLen17to32(byte[] byteArray, int base, int len) {
         long mul = k2 + len * 2;
-        long a = fetch64(byteArray, 0) * k1;
-        long b = fetch64(byteArray, 8);
-        long c = fetch64(byteArray, len - 8) * mul;
-        long d = fetch64(byteArray, len - 16) * k2;
+        long a = fetch64(byteArray, base) * k1;
+        long b = fetch64(byteArray, base + 8);
+        long c = fetch64(byteArray, base + len - 8) * mul;
+        long d = fetch64(byteArray, base + len - 16) * k2;
         return hashLen16(rotate(a + b, 43) + rotate(c, 30) + d,
                 a + rotate(b + k2, 18) + c, mul);
     }
 
-    private long hashLen33to64(byte[] byteArray) {
-        int len = byteArray.length;
+    private long hashLen33to64(byte[] byteArray, int base, int len) {
         long mul = k2 + len * 2;
-        long a = fetch64(byteArray, 0) * k2;
-        long b = fetch64(byteArray, 8);
-        long c = fetch64(byteArray, len - 24);
-        long d = fetch64(byteArray, len - 32);
-        long e = fetch64(byteArray, 16) * k2;
-        long f = fetch64(byteArray, 24) * 9;
-        long g = fetch64(byteArray, len - 8);
-        long h = fetch64(byteArray, len - 16) * mul;
+        long a = fetch64(byteArray, base) * k2;
+        long b = fetch64(byteArray, base + 8);
+        long c = fetch64(byteArray, base + len - 24);
+        long d = fetch64(byteArray, base + len - 32);
+        long e = fetch64(byteArray, base + 16) * k2;
+        long f = fetch64(byteArray, base + 24) * 9;
+        long g = fetch64(byteArray, base + len - 8);
+        long h = fetch64(byteArray, base + len - 16) * mul;
         long u = rotate(a + g, 43) + (rotate(b, 30) + c) * 9;
         long v = ((a + g) ^ d) + f + 1;
         long w = Long.reverseBytes((u + v) * mul) + h;

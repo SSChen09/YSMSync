@@ -268,6 +268,18 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **修复：** 恢复 `syncStep == 2` 条件。`sendPacket03` 不再立即设置 syncStep=3，改为在发送 Packet 03 后注册 5 秒延迟任务作为兜底：如果客户端未发送 Packet 04（所有模型缓存命中），延迟任务自动完成握手；如果客户端发送了 Packet 04，`handleRequestModel` 正常处理并完成握手（延迟任务检测到已完成后跳过）。
 
+### v2.0.8 — 修复 .ysm 缓存数据损坏
+
+**问题：** 客户端日志显示所有模型下载成功但解析失败（`NegativeArraySizeException`、`VarInt too big`）。原因是 `storeRawModelData` 将原始加密 .ysm 文件直接传入 `createCacheEntry`，但客户端期望缓存中存储的是解密后的 VarInt 格式明文。
+
+**根因：** .ysm 文件本身有加密层（文本头 + crypto version + modifiedChaCha 加密数据 + key/iv + CityHash64 签名）。服务端需要先 `decryptYsmFile` 解密解压，得到明文后再传入 `encryptServerCache` 创建缓存。客户端的 `transcodeServerDataToClientCache` 会将服务端缓存解密后重新加密为客户端本地格式。
+
+**修复：**
+- `YsmCrypt` 新增 `decryptYsmFile`、`modifiedChaChaDecrypt`、`mt19937XorInPlace` 方法，移植自 Fox Model Loader
+- `CityHash` 新增 `hash64WithSeed(byte[], int, int, long)` 偏移/长度重载
+- `YsmZstd` 新增 `decompress(byte[], int, int)` 偏移/长度重载
+- `ModelFileManager.storeRawModelData` 在创建缓存前先调用 `decryptYsmFile` 解密 .ysm 文件
+
 ---
 
 ## 项目结构
@@ -411,4 +423,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.6.7 | 上传成功但 models/ 目录无文件 | 新增 storeRawModelData，原始 .ysm 数据直接包装为 S2C 格式存储 |
 | v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}，自动迁移旧格式 |
 | v2.0.0 | 客户端每次重连重复上传模型 | Packet 03 填充 hash1/hash2，客户端缓存命中跳过下载；引入 zstd-jni 实现 YSM Zstd 压缩 |
+| v2.0.8 | 缓存 .ysm 数据损坏（`NegativeArraySizeException`/`VarInt too big`） | 缓存前先 `decryptYsmFile` 解密 .ysm 文件为明文，再传入 `encryptServerCache` |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |
