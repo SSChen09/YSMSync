@@ -129,6 +129,32 @@ public class YSMStateManager {
     }
 
     /**
+     * 广播所有玩家的模型状态给所有在线玩家（不推送模型文件）。
+     * 用于 /ysmsync broadcast 手动触发。
+     */
+    public void broadcastAllPlayerStates() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            PlayerYSMState state = get(player.getUniqueId());
+            if (state == null || !state.isHandshakeCompleted()) continue;
+
+            if (state.hasModel()) {
+                byte[] packet = buildSetModelAndTexturePacket(
+                        player.getEntityId(),
+                        state.getModelId(),
+                        state.getTextureId(),
+                        state.isModelDisabled()
+                );
+                broadcastYSMPayload(packet);
+
+                // 也广播缓存的实体状态数据
+                if (state.getLastEntityState() != null) {
+                    broadcastYSMPayload(state.getLastEntityState());
+                }
+            }
+        }
+    }
+
+    /**
      * 广播模型切换给所有在线玩家。
      */
     public void broadcastModelSwitch(Player player, String modelId, String textureId, boolean disabled) {

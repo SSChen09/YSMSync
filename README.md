@@ -10,6 +10,10 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 
 ## 最近更新
 
+### v2.2.0
+
+- **管理命令** — 新增 `/ysmsync sync` 和 `/ysmsync broadcast` 命令，支持手动触发握手同步和广播玩家模型状态，带 Tab 补全
+
 ### v2.1.0
 
 - **修复模型缓存格式** — 修复缓存数据格式不匹配导致客户端解析失败的问题（`NegativeArraySizeException`/`Expected 1 after SubEntities`）
@@ -20,15 +24,6 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 - **Packet 05 分块发送** — 客户端缓存未命中时，服务端通过加密缓存文件分块发送模型数据
 - **zstd-jni 依赖** — 引入 zstd-jni 实现 YSM 魔改 Zstd 压缩/解压，shadow 插件自动 shade 到 JAR
 
-### v1.7.0
-
-- **存储路径重构** — 模型存储从 `models/{UUID}.ysm` 改为 `models/{UUID}/{模型名}`，支持每个玩家存储多个模型，旧格式自动迁移
-
-### v1.6.7
-
-- **修复模型上传存储** — 上传完成后的原始 .ysm 数据不含 C2S packetId 前缀，`convertC2S_to_S2C` 匹配失败导致文件未写入磁盘，新增 `storeRawModelData` 直接包装为 S2C 格式存储
-- **修复模型上传分块解析** — `handleUploadChunk` 未读取 `writeByteArray` 的 VarInt 长度前缀，导致每个 chunk 多读 2 字节，累积后最后一个 chunk 因 overflow 被拒绝，上传数据不完整
-
 ## 功能
 
 - **模型同步** — 玩家加入或切换模型时，自动广播给所有在线玩家
@@ -36,6 +31,7 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 - **模型文件存储** — 服务端缓存 `.ysm` 模型文件，新玩家加入时自动推送
 - **模型上传** — 客户端可将模型文件上传至服务端存储，默认启用
 - **动画转发** — 转发动画/表情指令给其他玩家
+- **管理命令** — `/ysmsync sync` 手动触发握手同步，`/ysmsync broadcast` 广播玩家模型状态，带 Tab 补全
 - **Netty 拦截** — 在 Pipeline 层直接捕获 YSM 自定义频道数据包，兼容 Paper 26.1.x
 - **SQLite 持久化** — 玩家模型选择存储在 `plugins/YSMSync/ysm_data.db`，重启不丢失
 

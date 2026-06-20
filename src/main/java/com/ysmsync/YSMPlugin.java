@@ -13,6 +13,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -22,6 +23,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * YSMSync - Paper 服务端 YSM 模型同步插件。
@@ -32,7 +35,7 @@ import java.nio.file.Files;
  * 3. 广播 S2C 数据包给所有已握手的在线玩家
  * 4. 持久化存储玩家模型选择
  */
-public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
+public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
     private YSMStorage storage;
     private YSMStateManager stateManager;
@@ -82,6 +85,7 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
         // 注册命令
         getCommand("ysmsync").setExecutor(this);
+        getCommand("ysmsync").setTabCompleter(this);
 
         // 注册 YSM 频道
         getServer().getMessenger().registerIncomingPluginChannel(this, ysmChannel, (channel, player, message) -> {
@@ -274,8 +278,116 @@ public class YSMPlugin extends JavaPlugin implements Listener, CommandExecutor {
             return true;
         }
 
-        sender.sendMessage("[YSMSync] Usage: /ysmsync [update|reload]");
+        if (args[0].equalsIgnoreCase("sync")) {
+            handleSyncCommand(sender, args);
+            return true;
+        }
+
+        if (args[0].equalsIgnoreCase("broadcast")) {
+            handleBroadcastCommand(sender, args);
+            return true;
+        }
+
+        sender.sendMessage("[YSMSync] Usage: /ysmsync [update|reload|sync|broadcast]");
         return true;
+    }
+
+    /**
+     * /ysmsync sync [player] - 手动触发握手同步，向客户端推送模型缓存。
+     */
+    private void handleSyncCommand(CommandSender sender, String[] args) {
+        if (args.length > 1) {
+            // 指定玩家
+            Player target = Bukkit.getPlayer(args[1]);
+            if (target == null) {
+                sender.sendMessage("[YSMSync] Player not found: " + args[1]);
+                return;
+            }
+            PlayerYSMState state = stateManager.get(target.getUniqueId());
+            if (state == null || !state.isHandshakeCompleted()) {
+                sender.sendMessage("[YSMSync] Player " + target.getName() + " has not completed handshake.");
+                return;
+            }
+            stateManager.initiateHandshake(target);
+            sender.sendMessage("[YSMSync] Re-initiated handshake sync for " + target.getName() + ".");
+        } else {
+            // 所有在线玩家
+            int count = 0;
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                PlayerYSMState state = stateManager.get(player.getUniqueId());
+                if (state != null && state.isHandshakeCompleted()) {
+                    stateManager.initiateHandshake(player);
+                    count++;
+                }
+            }
+            sender.sendMessage("[YSMSync] Re-initiated handshake sync for " + count + " player(s).");
+        }
+    }
+
+    /**
+     * /ysmsync broadcast [player] - 广播玩家模型状态（不推送模型文件）。
+     */
+    private void handleBroadcastCommand(CommandSender sender, String[] args) {
+        if (args.length > 1) {
+            // 指定玩家
+            Player target = Bukkit.getPlayer(args[1]);
+            if (target == null) {
+                sender.sendMessage("[YSMSync] Player not found: " + args[1]);
+                return;
+            }
+            PlayerYSMState state = stateManager.get(target.getUniqueId());
+            if (state == null || !state.isHandshakeCompleted()) {
+                sender.sendMessage("[YSMSync] Player " + target.getName() + " has not completed handshake.");
+                return;
+            }
+            if (!state.hasModel()) {
+                sender.sendMessage("[YSMSync] Player " + target.getName() + " has no model set.");
+                return;
+            }
+            // 广播该玩家的模型状态 + 缓存的实体状态
+            byte[] packet = stateManager.buildSetModelAndTexturePacket(
+                    target.getEntityId(),
+                    state.getModelId(),
+                    state.getTextureId(),
+                    state.isModelDisabled()
+            );
+            stateManager.broadcastYSMPayload(packet);
+            if (state.getLastEntityState() != null) {
+                stateManager.broadcastYSMPayload(state.getLastEntityState());
+            }
+            sender.sendMessage("[YSMSync] Broadcast model state for " + target.getName() + ".");
+        } else {
+            // 所有在线玩家
+            stateManager.broadcastAllPlayerStates();
+            sender.sendMessage("[YSMSync] Broadcast model states for all online players.");
+        }
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
+        if (!command.getName().equalsIgnoreCase("ysmsync")) return null;
+        if (!sender.hasPermission("ysmsync.admin")) return null;
+
+        List<String> completions = new ArrayList<>();
+        if (args.length == 1) {
+            String partial = args[0].toLowerCase();
+            for (String sub : new String[]{"update", "reload", "sync", "broadcast"}) {
+                if (sub.startsWith(partial)) {
+                    completions.add(sub);
+                }
+            }
+        } else if (args.length == 2) {
+            String sub = args[0].toLowerCase();
+            if (sub.equals("sync") || sub.equals("broadcast")) {
+                String partial = args[1].toLowerCase();
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (player.getName().toLowerCase().startsWith(partial)) {
+                        completions.add(player.getName());
+                    }
+                }
+            }
+        }
+        return completions;
     }
 
     public void logDebug(String message) {

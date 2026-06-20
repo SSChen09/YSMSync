@@ -8,7 +8,7 @@ authors: [YSMSync]
 commands:
   ysmsync:
     description: YSMSync admin commands
-    usage: /ysmsync [update|reload]
+    usage: /ysmsync [update|reload|sync|broadcast]
     permission: ysmsync.admin
 
 permissions:
