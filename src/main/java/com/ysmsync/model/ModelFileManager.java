@@ -116,39 +116,15 @@ public class ModelFileManager {
 
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(safeName, s2cData);
 
-        // 解密 .ysm 文件后创建缓存
-        // decryptYsmFile 返回的数据以 4 字节 format DWORD 开头（如 0x20 0x00 0x00 0x00），
-        // 但客户端 YSMBinaryDeserializer(decompressed, 32) 期望从 byte 0 开始直接是模型数据，
-        // 因此需要去掉前 4 字节的 format DWORD。
-        byte[] cacheData = null;
+        // 解密 .ysm 文件后创建缓存（客户端期望缓存中存储解密后的 VarInt 格式明文）
+        byte[] decryptedModel = null;
         try {
-            byte[] decryptedModel = YsmCrypt.decryptYsmFile(rawData);
-            if (decryptedModel.length > 4) {
-                int formatDword = (decryptedModel[0] & 0xFF)
-                        | ((decryptedModel[1] & 0xFF) << 8)
-                        | ((decryptedModel[2] & 0xFF) << 16)
-                        | ((decryptedModel[3] & 0xFF) << 24);
-                if (formatDword >= 16) {
-                    // 现代格式（format >= 16）：去掉 4 字节 format DWORD
-                    cacheData = new byte[decryptedModel.length - 4];
-                    System.arraycopy(decryptedModel, 4, cacheData, 0, cacheData.length);
-                    plugin.logDebug("Decrypted " + safeName + " format=" + formatDword
-                            + " stripped 4-byte header, cache data=" + cacheData.length + " bytes");
-                } else {
-                    // 旧格式（format < 16）：无法标准化，直接使用
-                    cacheData = decryptedModel;
-                    plugin.getLogger().log(Level.WARNING,
-                            "Legacy format " + formatDword + " for " + safeName + ", cache may not work");
-                }
-            } else {
-                cacheData = decryptedModel;
-            }
+            decryptedModel = YsmCrypt.decryptYsmFile(rawData);
         } catch (Exception e) {
             plugin.getLogger().log(Level.WARNING, "Failed to decrypt .ysm file for " + safeName + ", caching raw data", e);
         }
-        if (cacheData != null) {
-            createCacheEntry(playerUuid, safeName, cacheData);
-        }
+        byte[] cacheData = (decryptedModel != null) ? decryptedModel : rawData;
+        createCacheEntry(playerUuid, safeName, cacheData);
 
         Path playerDir = modelsDir.resolve(playerUuid.toString());
         Path file = playerDir.resolve(safeName);
