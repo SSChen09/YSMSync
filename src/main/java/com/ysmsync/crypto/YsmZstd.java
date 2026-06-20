@@ -44,7 +44,13 @@ public class YsmZstd {
             Zstd.decompressByteArray(output, 0, output.length, washed, 0, washed.length);
             return output;
         }
-        return Zstd.decompress(washed, (int) Zstd.getFrameContentSize(washed));
+        // 未知大小时使用流式解压
+        try (com.github.luben.zstd.ZstdInputStream zis = new com.github.luben.zstd.ZstdInputStream(
+                new java.io.ByteArrayInputStream(washed))) {
+            return zis.readAllBytes();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Zstd decompress failed", e);
+        }
     }
 
     /**

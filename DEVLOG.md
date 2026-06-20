@@ -280,6 +280,12 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - `YsmZstd` 新增 `decompress(byte[], int, int)` 偏移/长度重载
 - `ModelFileManager.storeRawModelData` 在创建缓存前先调用 `decryptYsmFile` 解密 .ysm 文件
 
+### v2.0.9 — 修复 decryptYsmFile zstd 解压失败
+
+**问题：** v2.0.8 的 `decryptYsmFile` 在 zstd 解压阶段抛出 `ZstdException: Content size is unknown`。原因是某些 .ysm 文件的 zstd 帧头部未包含 Content Size 字段，`Zstd.decompressedSize()` 返回 -1 后 `getFrameContentSize()` 也找不到大小信息。
+
+**修复：** `YsmZstd.decompress` 当 `decompressedSize` 不可用时，改用 `ZstdInputStream` 流式解压，不再依赖帧头中的 Content Size。
+
 ---
 
 ## 项目结构
@@ -424,4 +430,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v1.7.0 | 存储路径不支持多模型 | models/{UUID}.ysm → models/{UUID}/{模型名}，自动迁移旧格式 |
 | v2.0.0 | 客户端每次重连重复上传模型 | Packet 03 填充 hash1/hash2，客户端缓存命中跳过下载；引入 zstd-jni 实现 YSM Zstd 压缩 |
 | v2.0.8 | 缓存 .ysm 数据损坏（`NegativeArraySizeException`/`VarInt too big`） | 缓存前先 `decryptYsmFile` 解密 .ysm 文件为明文，再传入 `encryptServerCache` |
+| v2.0.9 | `decryptYsmFile` zstd 解压失败（`Content size is unknown`） | `YsmZstd.decompress` 改用 `ZstdInputStream` 流式解压，不依赖帧头 Content Size |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |
