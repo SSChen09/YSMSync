@@ -309,6 +309,18 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - `loadFromDisk()` 内联缓存重建逻辑也改用 `decryptAndProcessYsm()`
 - 服务器重启后需删除旧 `cache/` 目录，触发缓存重新生成
 
+### v2.3.0 — 修复模型缓存序列化
+
+**新增：**
+- 移植 Fox Model Loader 的 `YSMBinaryDeserializer`、`YSMBinarySerializer`、`RawYsmModel` 到 `com.ysmsync.resource` 包
+- `YSMByteBuf` 新增 `readFloat`、`writeFloat`、`readByte`、`readDword`、`writeDword`、`skipBytes`、`getOffset` 方法
+
+**修复：**
+- `decryptAndProcessYsm()` 现在对现代格式（>=16）执行完整的反序列化→重序列化管线：`decryptYsmFile → YSMBinaryDeserializer → RawYsmModel → YSMBinarySerializer.serialize(model, 32, true) → encryptServerCache`
+- 与 Fox Model Loader 服务端的 `processAndCacheModel()` 流程完全一致
+- 修复客户端解析服务端缓存数据时 `IndexOutOfBoundsException`/`NegativeArraySizeException`（动画控制器字符串读取位置偏移）
+- 旧格式（format < 16）保持原有行为（序列化器不支持 format<16）
+
 ### v2.2.0 — 管理命令
 
 **新增功能：**
@@ -472,4 +484,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v2.1.0 | 缓存数据格式不匹配（`NegativeArraySizeException`/`Expected 1 after SubEntities`） | `decryptYsmFile` 返回数据含 4 字节 format DWORD，客户端期望无头数据；去掉 format DWORD 后再缓存 |
 | v2.1.1 | 重启后缓存重建未解密 .ysm 数据，客户端全部缓存 MISS 并解析失败 | 提取 `decryptAndProcessYsm()` 公共方法，`rebuildCacheEntries()`/`loadFromDisk()`/`storeModelData()` 统一使用解密后的数据 |
 | v2.2.0 | 无（新功能） | 新增 `/ysmsync sync` 和 `/ysmsync broadcast` 管理命令，支持手动触发握手同步和广播玩家模型状态，带 Tab 补全 |
+| v2.3.0 | 客户端解析服务端缓存数据失败（`IndexOutOfBoundsException`/`NegativeArraySizeException` at `parseAnimationControllerBody`） | 缓存数据缺少 format 32 重序列化步骤；移植 Fox 的 `YSMBinaryDeserializer` + `YSMBinarySerializer`，`decryptAndProcessYsm()` 改为 `decrypt → deserialize → serialize(32) → encryptServerCache` |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

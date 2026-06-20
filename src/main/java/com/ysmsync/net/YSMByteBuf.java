@@ -100,6 +100,43 @@ public class YSMByteBuf implements AutoCloseable {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    public byte readByte() {
+        return buf.readByte();
+    }
+
+    public void skipBytes(int n) {
+        buf.skipBytes(n);
+    }
+
+    /**
+     * 获取当前读取偏移量（已读取的字节数）。
+     */
+    public int getOffset() {
+        return buf.readerIndex();
+    }
+
+    /**
+     * 读取 4 字节小端序无符号整数（DWORD）。
+     */
+    public long readDword() {
+        return buf.readUnsignedIntLE();
+    }
+
+    /**
+     * 写入 4 字节小端序整数（DWORD）。
+     */
+    public void writeDword(int value) {
+        buf.writeIntLE(value);
+    }
+
+    public float readFloat() {
+        return buf.readFloatLE();
+    }
+
+    public void writeFloat(float value) {
+        buf.writeFloatLE(value);
+    }
+
     public byte[] toArray() {
         byte[] bytes = new byte[buf.readableBytes()];
         buf.readBytes(bytes);

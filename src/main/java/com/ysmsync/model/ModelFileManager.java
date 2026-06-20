@@ -2,6 +2,10 @@ package com.ysmsync.model;
 
 import com.ysmsync.YSMPlugin;
 import com.ysmsync.crypto.YsmCrypt;
+import com.ysmsync.net.YSMByteBuf;
+import com.ysmsync.resource.YSMBinaryDeserializer;
+import com.ysmsync.resource.YSMBinarySerializer;
+import com.ysmsync.resource.pojo.RawYsmModel;
 import com.ysmsync.util.VarIntUtil;
 
 import java.io.*;
@@ -433,14 +437,25 @@ public class ModelFileManager {
                         | ((decryptedModel[2] & 0xFF) << 16)
                         | ((decryptedModel[3] & 0xFF) << 24);
                 if (formatDword >= 16) {
-                    // 现代格式：去掉 4 字节 format DWORD
-                    byte[] cacheData = new byte[decryptedModel.length - 4];
-                    System.arraycopy(decryptedModel, 4, cacheData, 0, cacheData.length);
-                    plugin.logDebug("Decrypted " + modelName + " format=" + formatDword
-                            + " stripped 4-byte header, cache data=" + cacheData.length + " bytes");
-                    return cacheData;
+                    // 现代格式：反序列化后重新序列化为 format 32（与 Fox Model Loader 一致）
+                    try (YSMBinaryDeserializer deserializer = new YSMBinaryDeserializer(decryptedModel)) {
+                        RawYsmModel model = deserializer.deserializeKeepOpen();
+                        deserializer.parseYSMFooter(model);
+                        try (YSMByteBuf serialized = YSMBinarySerializer.serialize(model, 32, true)) {
+                            byte[] format32Data = serialized.toArray();
+                            plugin.logDebug("Decrypted " + modelName + " format=" + formatDword
+                                    + " -> re-serialized to format 32, cache data=" + format32Data.length + " bytes");
+                            return format32Data;
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().log(Level.WARNING,
+                                "Deserialize/re-serialize failed for " + modelName + ", falling back to stripped header", e);
+                        byte[] cacheData = new byte[decryptedModel.length - 4];
+                        System.arraycopy(decryptedModel, 4, cacheData, 0, cacheData.length);
+                        return cacheData;
+                    }
                 } else {
-                    // 旧格式（format < 16）：使用解密后的原始数据
+                    // 旧格式（format < 16）：使用解密后的原始数据（序列化器不支持 format<16）
                     plugin.getLogger().log(Level.WARNING,
                             "Legacy format " + formatDword + " for " + modelName + ", cache may not work");
                     return decryptedModel;

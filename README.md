@@ -10,6 +10,10 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 
 ## 最近更新
 
+### v2.3.0
+
+- **修复模型缓存序列化** — 缓存数据现在经过完整的反序列化→重序列化管线（format 32），与 Fox Model Loader 一致，修复客户端解析缓存数据时 `IndexOutOfBoundsException`/`NegativeArraySizeException`
+
 ### v2.2.0
 
 - **管理命令** — 新增 `/ysmsync sync` 和 `/ysmsync broadcast` 命令，支持手动触发握手同步和广播玩家模型状态，带 Tab 补全
@@ -17,12 +21,6 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 ### v2.1.0
 
 - **修复模型缓存格式** — 修复缓存数据格式不匹配导致客户端解析失败的问题（`NegativeArraySizeException`/`Expected 1 after SubEntities`）
-
-### v2.0.0
-
-- **模型缓存机制** — Packet 03 携带服务端已缓存模型的 hash1/hash2，客户端对比本地缓存决定是否跳过下载，避免每次重连重复传输模型文件
-- **Packet 05 分块发送** — 客户端缓存未命中时，服务端通过加密缓存文件分块发送模型数据
-- **zstd-jni 依赖** — 引入 zstd-jni 实现 YSM 魔改 Zstd 压缩/解压，shadow 插件自动 shade 到 JAR
 
 ## 功能
 
