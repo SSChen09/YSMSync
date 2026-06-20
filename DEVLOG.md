@@ -296,6 +296,19 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **修复：** `storeRawModelData` 在 `decryptYsmFile` 后读取前 4 字节的 format DWORD，若 format ≥ 16（现代格式）则去掉该头部，再传入 `encryptServerCache`。同时清理调试日志。
 
+### v2.1.1 — 修复缓存重建未解密 .ysm 数据
+
+**问题：** 服务器重启后，`rebuildCacheEntries()` 从磁盘 S2C 数据中提取原始 .ysm 二进制直接创建缓存，但客户端期望的是经过 `decryptYsmFile` 解密 + format DWORD 处理后的明文数据。导致所有旧模型缓存失效，客户端报 `IndexOutOfBoundsException`、`VarInt too big`、`NegativeArraySizeException` 等错误。此外 `storeModelData()`（C2S ModelSync 路径）也存在同样问题。
+
+**根因：** `storeRawModelData()` 正确执行了 `decryptYsmFile → format DWORD 处理 → encryptServerCache`，但 `rebuildCacheEntries()` 和 `loadFromDisk()` 跳过了解密处理步骤，直接用原始 .ysm 数据计算哈希和加密缓存。哈希值不匹配导致客户端缓存 MISS，且缓存文件内容格式不正确。
+
+**修复：**
+- 提取公共方法 `decryptAndProcessYsm()`，统一处理 .ysm 解密和格式标准化
+- `storeModelData()` 改用 `decryptAndProcessYsm()` 处理缓存数据（之前直接使用原始二进制）
+- `rebuildCacheEntries()` 在重建缓存文件前先解密并处理 .ysm 数据
+- `loadFromDisk()` 内联缓存重建逻辑也改用 `decryptAndProcessYsm()`
+- 服务器重启后需删除旧 `cache/` 目录，触发缓存重新生成
+
 ---
 
 ## 项目结构
@@ -442,4 +455,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v2.0.8 | 缓存 .ysm 数据损坏（`NegativeArraySizeException`/`VarInt too big`） | 缓存前先 `decryptYsmFile` 解密 .ysm 文件为明文，再传入 `encryptServerCache` |
 | v2.0.9 | `decryptYsmFile` zstd 解压失败（`Content size is unknown`） | `YsmZstd.decompress` 改用 `ZstdInputStream` 流式解压，不依赖帧头 Content Size |
 | v2.1.0 | 缓存数据格式不匹配（`NegativeArraySizeException`/`Expected 1 after SubEntities`） | `decryptYsmFile` 返回数据含 4 字节 format DWORD，客户端期望无头数据；去掉 format DWORD 后再缓存 |
+| v2.1.1 | 重启后缓存重建未解密 .ysm 数据，客户端全部缓存 MISS 并解析失败 | 提取 `decryptAndProcessYsm()` 公共方法，`rebuildCacheEntries()`/`loadFromDisk()`/`storeModelData()` 统一使用解密后的数据 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

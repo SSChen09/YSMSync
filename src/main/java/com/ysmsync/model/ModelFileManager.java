@@ -78,10 +78,13 @@ public class ModelFileManager {
         String name = "model";
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(name, s2cData);
 
-        // 提取模型二进制数据（去掉 S2C 包头 VarInt）
+        // 提取原始 .ysm 二进制数据，解密处理后创建缓存
         byte[] modelBinary = extractModelBinary(s2cData);
         if (modelBinary != null) {
-            createCacheEntry(playerUuid, name, modelBinary);
+            byte[] cacheData = decryptAndProcessYsm(modelBinary, name);
+            if (cacheData != null) {
+                createCacheEntry(playerUuid, name, cacheData);
+            }
         }
 
         Path playerDir = modelsDir.resolve(playerUuid.toString());
@@ -117,35 +120,7 @@ public class ModelFileManager {
         playerModels.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(safeName, s2cData);
 
         // 解密 .ysm 文件后创建缓存
-        // decryptYsmFile 返回的数据以 4 字节 format DWORD 开头（如 0x20 0x00 0x00 0x00），
-        // 但客户端 YSMBinaryDeserializer(decompressed, 32) 期望从 byte 0 开始直接是模型数据，
-        // 因此需要去掉前 4 字节的 format DWORD。
-        byte[] cacheData = null;
-        try {
-            byte[] decryptedModel = YsmCrypt.decryptYsmFile(rawData);
-            if (decryptedModel.length > 4) {
-                int formatDword = (decryptedModel[0] & 0xFF)
-                        | ((decryptedModel[1] & 0xFF) << 8)
-                        | ((decryptedModel[2] & 0xFF) << 16)
-                        | ((decryptedModel[3] & 0xFF) << 24);
-                if (formatDword >= 16) {
-                    // 现代格式（format >= 16）：去掉 4 字节 format DWORD
-                    cacheData = new byte[decryptedModel.length - 4];
-                    System.arraycopy(decryptedModel, 4, cacheData, 0, cacheData.length);
-                    plugin.logDebug("Decrypted " + safeName + " format=" + formatDword
-                            + " stripped 4-byte header, cache data=" + cacheData.length + " bytes");
-                } else {
-                    // 旧格式（format < 16）：无法标准化，直接使用
-                    cacheData = decryptedModel;
-                    plugin.getLogger().log(Level.WARNING,
-                            "Legacy format " + formatDword + " for " + safeName + ", cache may not work");
-                }
-            } else {
-                cacheData = decryptedModel;
-            }
-        } catch (Exception e) {
-            plugin.getLogger().log(Level.WARNING, "Failed to decrypt .ysm file for " + safeName + ", caching raw data", e);
-        }
+        byte[] cacheData = decryptAndProcessYsm(rawData, safeName);
         if (cacheData != null) {
             createCacheEntry(playerUuid, safeName, cacheData);
         }
@@ -331,6 +306,7 @@ public class ModelFileManager {
 
     /**
      * 为已加载但缺少缓存条目的模型重建条目。
+     * 从 S2C 数据中提取原始 .ysm，解密处理后创建正确的缓存文件。
      */
     private void rebuildCacheEntries() {
         for (Map.Entry<UUID, Map<String, byte[]>> playerEntry : playerModels.entrySet()) {
@@ -345,15 +321,22 @@ public class ModelFileManager {
                 byte[] modelBinary = extractModelBinary(s2cData);
                 if (modelBinary == null) continue;
 
+                // 解密 .ysm 文件并处理格式（与 storeRawModelData 路径一致）
+                byte[] cacheData = decryptAndProcessYsm(modelBinary, modelName);
+                if (cacheData == null) {
+                    // 解密失败时回退到原始数据
+                    cacheData = modelBinary;
+                }
+
                 try {
-                    String sha256 = sha256Hex(modelBinary);
+                    String sha256 = sha256Hex(cacheData);
                     long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
                     String cacheFileName = String.format("%016x%016x", hashes[0], hashes[1]);
                     Path cacheFile = cacheDir.resolve(cacheFileName);
 
                     // 如果缓存文件不存在，创建它
                     if (!Files.exists(cacheFile)) {
-                        byte[] encrypted = YsmCrypt.encryptServerCache(modelBinary, serverKey, hashes[0], hashes[1]);
+                        byte[] encrypted = YsmCrypt.encryptServerCache(cacheData, serverKey, hashes[0], hashes[1]);
                         Files.write(cacheFile, encrypted);
                         plugin.logDebug("Rebuilt cache file: " + cacheFileName);
                     }
@@ -394,12 +377,15 @@ public class ModelFileManager {
                     if (serverKey != null && !playerCacheEntries.containsKey(playerUuid)) {
                         byte[] modelBinary = extractModelBinary(data);
                         if (modelBinary != null) {
-                            String sha256 = sha256Hex(modelBinary);
-                            long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
-                            ModelCacheEntry entry = new ModelCacheEntry(modelName, hashes[0], hashes[1]);
-                            playerCacheEntries
-                                    .computeIfAbsent(playerUuid, k2 -> new ConcurrentHashMap<>())
-                                    .put(modelName, entry);
+                            byte[] cacheData = decryptAndProcessYsm(modelBinary, modelName);
+                            if (cacheData != null) {
+                                String sha256 = sha256Hex(cacheData);
+                                long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
+                                ModelCacheEntry entry = new ModelCacheEntry(modelName, hashes[0], hashes[1]);
+                                playerCacheEntries
+                                        .computeIfAbsent(playerUuid, k2 -> new ConcurrentHashMap<>())
+                                        .put(modelName, entry);
+                            }
                         }
                     }
 
@@ -426,6 +412,43 @@ public class ModelFileManager {
             buf.get(binary);
             return binary;
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 解密并处理 .ysm 原始数据，返回适合缓存的模型明文。
+     * 对格式 >= 16 的模型去掉 4 字节 format DWORD；格式 < 16 的旧模型使用原始解密数据。
+     *
+     * @param rawYsmData 原始 .ysm 文件字节
+     * @param modelName  模型名称（用于日志）
+     * @return 处理后的缓存数据，失败返回 null
+     */
+    private byte[] decryptAndProcessYsm(byte[] rawYsmData, String modelName) {
+        try {
+            byte[] decryptedModel = YsmCrypt.decryptYsmFile(rawYsmData);
+            if (decryptedModel.length > 4) {
+                int formatDword = (decryptedModel[0] & 0xFF)
+                        | ((decryptedModel[1] & 0xFF) << 8)
+                        | ((decryptedModel[2] & 0xFF) << 16)
+                        | ((decryptedModel[3] & 0xFF) << 24);
+                if (formatDword >= 16) {
+                    // 现代格式：去掉 4 字节 format DWORD
+                    byte[] cacheData = new byte[decryptedModel.length - 4];
+                    System.arraycopy(decryptedModel, 4, cacheData, 0, cacheData.length);
+                    plugin.logDebug("Decrypted " + modelName + " format=" + formatDword
+                            + " stripped 4-byte header, cache data=" + cacheData.length + " bytes");
+                    return cacheData;
+                } else {
+                    // 旧格式（format < 16）：使用解密后的原始数据
+                    plugin.getLogger().log(Level.WARNING,
+                            "Legacy format " + formatDword + " for " + modelName + ", cache may not work");
+                    return decryptedModel;
+                }
+            }
+            return decryptedModel;
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to decrypt .ysm file for " + modelName + ", caching raw data", e);
             return null;
         }
     }
