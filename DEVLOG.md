@@ -286,6 +286,14 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 
 **修复：** `YsmZstd.decompress` 当 `decompressedSize` 不可用时，改用 `ZstdInputStream` 流式解压，不再依赖帧头中的 Content Size。
 
+### v2.1.0 — 修复缓存数据格式不匹配
+
+**问题：** v2.0.8/v2.0.9 引入的模型缓存仍无法被客户端解析，报 `NegativeArraySizeException`、`IndexOutOfBoundsException`、`Expected 1 after SubEntities` 等错误。
+
+**根因：** `decryptYsmFile` 返回的解压数据以 4 字节 format DWORD 开头（如 `0x20 0x00 0x00 0x00` 表示 format 32），但客户端 `YSMBinaryDeserializer(decompressed, 32)` 期望从 byte 0 开始直接是模型数据（无 format DWORD）。Fox 服务端通过 `decryptYsmFile → YSMBinaryDeserializer → RawYsmModel → YSMBinarySerializer.serialize(model, 32, true)` 做了格式标准化，YSMSync 跳过了这一步。
+
+**修复：** `storeRawModelData` 在 `decryptYsmFile` 后读取前 4 字节的 format DWORD，若 format ≥ 16（现代格式）则去掉该头部，再传入 `encryptServerCache`。同时清理调试日志。
+
 ---
 
 ## 项目结构
@@ -431,4 +439,5 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v2.0.0 | 客户端每次重连重复上传模型 | Packet 03 填充 hash1/hash2，客户端缓存命中跳过下载；引入 zstd-jni 实现 YSM Zstd 压缩 |
 | v2.0.8 | 缓存 .ysm 数据损坏（`NegativeArraySizeException`/`VarInt too big`） | 缓存前先 `decryptYsmFile` 解密 .ysm 文件为明文，再传入 `encryptServerCache` |
 | v2.0.9 | `decryptYsmFile` zstd 解压失败（`Content size is unknown`） | `YsmZstd.decompress` 改用 `ZstdInputStream` 流式解压，不依赖帧头 Content Size |
+| v2.1.0 | 缓存数据格式不匹配（`NegativeArraySizeException`/`Expected 1 after SubEntities`） | `decryptYsmFile` 返回数据含 4 字节 format DWORD，客户端期望无头数据；去掉 format DWORD 后再缓存 |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

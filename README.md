@@ -10,6 +10,10 @@ Paper 服务端插件，实现 [Yes Steve Model](https://modrinth.com/mod/yes-st
 
 ## 最近更新
 
+### v2.1.0
+
+- **修复模型缓存格式** — 修复缓存数据格式不匹配导致客户端解析失败的问题（`NegativeArraySizeException`/`Expected 1 after SubEntities`）
+
 ### v2.0.0
 
 - **模型缓存机制** — Packet 03 携带服务端已缓存模型的 hash1/hash2，客户端对比本地缓存决定是否跳过下载，避免每次重连重复传输模型文件
