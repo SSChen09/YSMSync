@@ -309,6 +309,21 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - `loadFromDisk()` 内联缓存重建逻辑也改用 `decryptAndProcessYsm()`
 - 服务器重启后需删除旧 `cache/` 目录，触发缓存重新生成
 
+### v2.2.0 — 管理命令
+
+**新增功能：**
+- `/ysmsync sync [player]` — 手动触发握手同步，重新向客户端推送模型缓存（无参数则对所有已握手玩家触发）
+- `/ysmsync broadcast [player]` — 广播玩家模型状态给所有在线玩家，不推送模型文件（无参数则广播所有在线玩家）
+- Tab 补全支持：子命令和玩家名自动补全
+
+**关键代码：**
+- `YSMPlugin`：新增 `handleSyncCommand`、`handleBroadcastCommand`、`onTabComplete` 方法，实现 `TabCompleter` 接口
+- `YSMStateManager`：新增 `broadcastAllPlayerStates()` 公共方法，遍历所有在线已握手玩家的模型状态并广播
+
+**使用场景：**
+- 服务端模型缓存更新后，管理员可手动触发 `sync` 重新推送缓存给所有客户端
+- 玩家模型状态不一致时，管理员可手动触发 `broadcast` 刷新所有客户端的模型显示
+
 ### v2.3.0 — 修复模型缓存序列化
 
 **新增：**
@@ -333,21 +348,6 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - `ModelFileManager.getModelData()` → `getAllModelData()`，返回 `Collection<byte[]>`
 - `decryptAndProcessYsm()`：format < 16 返回 `null` 跳过缓存
 - `YSMPacketHandler`、`YSMStateManager` 中 4 处调用点更新为遍历所有模型
-
-### v2.2.0 — 管理命令
-
-**新增功能：**
-- `/ysmsync sync [player]` — 手动触发握手同步，重新向客户端推送模型缓存（无参数则对所有已握手玩家触发）
-- `/ysmsync broadcast [player]` — 广播玩家模型状态给所有在线玩家，不推送模型文件（无参数则广播所有在线玩家）
-- Tab 补全支持：子命令和玩家名自动补全
-
-**关键代码：**
-- `YSMPlugin`：新增 `handleSyncCommand`、`handleBroadcastCommand`、`onTabComplete` 方法，实现 `TabCompleter` 接口
-- `YSMStateManager`：新增 `broadcastAllPlayerStates()` 公共方法，遍历所有在线已握手玩家的模型状态并广播
-
-**使用场景：**
-- 服务端模型缓存更新后，管理员可手动触发 `sync` 重新推送缓存给所有客户端
-- 玩家模型状态不一致时，管理员可手动触发 `broadcast` 刷新所有客户端的模型显示
 
 ---
 
