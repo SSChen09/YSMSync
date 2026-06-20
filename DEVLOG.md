@@ -321,6 +321,19 @@ Paper 26.1.2 中 `ServerPlayer.connection` 从方法变为字段。
 - 修复客户端解析服务端缓存数据时 `IndexOutOfBoundsException`/`NegativeArraySizeException`（动画控制器字符串读取位置偏移）
 - 旧格式（format < 16）保持原有行为（序列化器不支持 format<16）
 
+### v2.3.1 — 多模型同步修复
+
+**修复：**
+- **多模型广播**：`getModelData()` 只返回第一个模型，改为 `getAllModelData()` 返回所有模型，修复上传多个模型后只有第一个能同步给其他玩家的问题
+- **Format 15 缓存兼容**：旧格式（format < 16）模型无法重序列化为 format 32，创建缓存会导致客户端 `IndexOutOfBoundsException`，现跳过缓存创建
+- **缓存条目重建**：`loadFromDisk()` 中缓存重建从"按玩家检查"改为"逐模型检查"，避免已有部分缓存条目时遗漏新模型
+- **System.out 输出**：`YSMBinaryDeserializer` 中 `System.out.println` 改为 `LOGGER.fine()`，消除 Paper Nag warning
+
+**关键代码变更：**
+- `ModelFileManager.getModelData()` → `getAllModelData()`，返回 `Collection<byte[]>`
+- `decryptAndProcessYsm()`：format < 16 返回 `null` 跳过缓存
+- `YSMPacketHandler`、`YSMStateManager` 中 4 处调用点更新为遍历所有模型
+
 ### v2.2.0 — 管理命令
 
 **新增功能：**
@@ -485,4 +498,8 @@ GitHub Actions workflow（`.github/workflows/build.yml`）：
 | v2.1.1 | 重启后缓存重建未解密 .ysm 数据，客户端全部缓存 MISS 并解析失败 | 提取 `decryptAndProcessYsm()` 公共方法，`rebuildCacheEntries()`/`loadFromDisk()`/`storeModelData()` 统一使用解密后的数据 |
 | v2.2.0 | 无（新功能） | 新增 `/ysmsync sync` 和 `/ysmsync broadcast` 管理命令，支持手动触发握手同步和广播玩家模型状态，带 Tab 补全 |
 | v2.3.0 | 客户端解析服务端缓存数据失败（`IndexOutOfBoundsException`/`NegativeArraySizeException` at `parseAnimationControllerBody`） | 缓存数据缺少 format 32 重序列化步骤；移植 Fox 的 `YSMBinaryDeserializer` + `YSMBinarySerializer`，`decryptAndProcessYsm()` 改为 `decrypt → deserialize → serialize(32) → encryptServerCache` |
+| v2.3.1 | `getModelData()` 只返回第一个模型，多模型无法同步 | 改为 `getAllModelData()` 返回所有模型 |
+| v2.3.1 | Format 15 缓存数据客户端 `IndexOutOfBoundsException` | 跳过 format < 16 的缓存创建 |
+| v2.3.1 | `loadFromDisk()` 缓存重建按玩家检查导致遗漏 | 改为逐模型检查 |
+| v2.3.1 | `YSMBinaryDeserializer` 使用 `System.out` 触发 Paper Nag | 改为 `LOGGER.fine()` |
 | CI | `./gradlew: Permission denied` | 添加 `chmod +x gradlew` |

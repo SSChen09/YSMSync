@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * YSM 二进制反序列化器，移植自 Fox Model Loader。
@@ -16,6 +17,7 @@ import java.util.Map;
  */
 public class YSMBinaryDeserializer implements AutoCloseable {
 
+    private static final Logger LOGGER = Logger.getLogger(YSMBinaryDeserializer.class.getName());
     private final YSMByteBuf reader;
     private final int format;
     private final RawYsmModel model;
@@ -35,7 +37,7 @@ public class YSMBinaryDeserializer implements AutoCloseable {
     }
 
     private RawYsmModel deserializeInternal(boolean closeOnExit) {
-        System.out.println("[YSMSync] 反序列化 format " + format + " 模型...");
+        LOGGER.fine("[YSMSync] 反序列化 format " + format + " 模型...");
         if (format < 4) {
             deserializeLegacyV1();
         } else if (format <= 15) {
@@ -53,7 +55,7 @@ public class YSMBinaryDeserializer implements AutoCloseable {
         if (closeOnExit) {
             this.reader.close();
         }
-        System.out.println("[YSMSync] 反序列化结束，偏移: 0x" + Integer.toHexString(offset));
+        LOGGER.fine("[YSMSync] 反序列化结束，偏移: 0x" + Integer.toHexString(offset));
         return model;
     }
 

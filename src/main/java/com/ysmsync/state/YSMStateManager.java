@@ -76,9 +76,8 @@ public class YSMStateManager {
             PlayerYSMState other = entry.getValue();
             if (!other.hasModel()) continue;
 
-            // 先发送模型文件数据（让客户端能渲染模型）
-            byte[] modelFile = modelFileManager.getModelData(entry.getKey());
-            if (modelFile != null) {
+            // 先发送所有模型文件数据（让客户端能渲染模型）
+            for (byte[] modelFile : modelFileManager.getAllModelData(entry.getKey())) {
                 sendYSMPayload(joiner, modelFile);
             }
 
@@ -108,9 +107,8 @@ public class YSMStateManager {
         PlayerYSMState joinerState = get(joiner.getUniqueId());
         if (joinerState == null || !joinerState.hasModel()) return;
 
-        // 先发送模型文件数据给所有其他玩家
-        byte[] modelFile = modelFileManager.getModelData(joiner.getUniqueId());
-        if (modelFile != null) {
+        // 先发送所有模型文件数据给所有其他玩家
+        for (byte[] modelFile : modelFileManager.getAllModelData(joiner.getUniqueId())) {
             broadcastYSMPayloadExcept(joiner, modelFile);
         }
 

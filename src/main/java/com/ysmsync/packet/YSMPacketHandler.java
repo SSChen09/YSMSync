@@ -137,9 +137,8 @@ public class YSMPacketHandler {
         plugin.logDebug("Model sync from " + player.getName() + " (" + rawData.length + " bytes)");
         // 存储模型数据到服务端（内部会将 C2S 格式转换为 S2C 格式）
         modelFileManager.storeModelData(player.getUniqueId(), rawData);
-        // 获取 S2C 格式的数据并广播给其他在线玩家
-        byte[] s2cData = modelFileManager.getModelData(player.getUniqueId());
-        if (s2cData != null) {
+        // 获取所有 S2C 格式的数据并广播给其他在线玩家
+        for (byte[] s2cData : modelFileManager.getAllModelData(player.getUniqueId())) {
             stateManager.relayRawPacket(player, s2cData);
         }
     }
@@ -292,9 +291,8 @@ public class YSMPacketHandler {
         byte[] response = uploadManager.handleUploadFinish(buf);
         stateManager.sendYSMPayload(player, response);
 
-        // 上传成功后，广播模型文件给所有在线玩家
-        byte[] modelFile = modelFileManager.getModelData(player.getUniqueId());
-        if (modelFile != null) {
+        // 上传成功后，广播所有模型文件给所有在线玩家
+        for (byte[] modelFile : modelFileManager.getAllModelData(player.getUniqueId())) {
             stateManager.broadcastYSMPayloadExcept(player, modelFile);
         }
     }

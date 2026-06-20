@@ -216,22 +216,22 @@ public class ModelFileManager {
     }
 
     /**
-     * 获取玩家的模型数据（S2C 格式）。
-     * 返回第一个可用的模型数据，兼容现有协议流程。
+     * 获取玩家的所有模型数据（S2C 格式）。
+     * 返回该玩家所有模型的 S2C 数据集合。
      */
-    public byte[] getModelData(UUID playerUuid) {
+    public Collection<byte[]> getAllModelData(UUID playerUuid) {
         Map<String, byte[]> models = playerModels.get(playerUuid);
         if (models != null && !models.isEmpty()) {
-            return models.values().iterator().next();
+            return new ArrayList<>(models.values());
         }
 
         // 从磁盘加载
         loadFromDisk(playerUuid);
         models = playerModels.get(playerUuid);
         if (models != null && !models.isEmpty()) {
-            return models.values().iterator().next();
+            return new ArrayList<>(models.values());
         }
-        return null;
+        return Collections.emptyList();
     }
 
     /**
@@ -327,10 +327,7 @@ public class ModelFileManager {
 
                 // 解密 .ysm 文件并处理格式（与 storeRawModelData 路径一致）
                 byte[] cacheData = decryptAndProcessYsm(modelBinary, modelName);
-                if (cacheData == null) {
-                    // 解密失败时回退到原始数据
-                    cacheData = modelBinary;
-                }
+                if (cacheData == null) continue; // format < 16 或解密失败，跳过缓存重建
 
                 try {
                     String sha256 = sha256Hex(cacheData);
@@ -377,18 +374,21 @@ public class ModelFileManager {
                     byte[] data = Files.readAllBytes(file);
                     models.put(modelName, data);
 
-                    // 尝试为加载的模型重建缓存条目
-                    if (serverKey != null && !playerCacheEntries.containsKey(playerUuid)) {
-                        byte[] modelBinary = extractModelBinary(data);
-                        if (modelBinary != null) {
-                            byte[] cacheData = decryptAndProcessYsm(modelBinary, modelName);
-                            if (cacheData != null) {
-                                String sha256 = sha256Hex(cacheData);
-                                long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
-                                ModelCacheEntry entry = new ModelCacheEntry(modelName, hashes[0], hashes[1]);
-                                playerCacheEntries
-                                        .computeIfAbsent(playerUuid, k2 -> new ConcurrentHashMap<>())
-                                        .put(modelName, entry);
+                    // 尝试为加载的模型重建缓存条目（逐模型检查，避免遗漏）
+                    if (serverKey != null) {
+                        Map<String, ModelCacheEntry> existingEntries = playerCacheEntries.get(playerUuid);
+                        if (existingEntries == null || !existingEntries.containsKey(modelName)) {
+                            byte[] modelBinary = extractModelBinary(data);
+                            if (modelBinary != null) {
+                                byte[] cacheData = decryptAndProcessYsm(modelBinary, modelName);
+                                if (cacheData != null) {
+                                    String sha256 = sha256Hex(cacheData);
+                                    long[] hashes = YsmCrypt.calculateModelHashes(sha256, serverKey);
+                                    ModelCacheEntry entry = new ModelCacheEntry(modelName, hashes[0], hashes[1]);
+                                    playerCacheEntries
+                                            .computeIfAbsent(playerUuid, k2 -> new ConcurrentHashMap<>())
+                                            .put(modelName, entry);
+                                }
                             }
                         }
                     }
@@ -455,10 +455,11 @@ public class ModelFileManager {
                         return cacheData;
                     }
                 } else {
-                    // 旧格式（format < 16）：使用解密后的原始数据（序列化器不支持 format<16）
+                    // 旧格式（format < 16）：无法重序列化为 format 32，跳过缓存创建。
+                    // 模型仍可通过直接广播路径（packet ID=1）同步给其他玩家。
                     plugin.getLogger().log(Level.WARNING,
-                            "Legacy format " + formatDword + " for " + modelName + ", cache may not work");
-                    return decryptedModel;
+                            "Legacy format " + formatDword + " for " + modelName + ", skipping cache (incompatible with format 32)");
+                    return null;
                 }
             }
             return decryptedModel;
